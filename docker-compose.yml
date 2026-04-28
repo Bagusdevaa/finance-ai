@@ -1,0 +1,72 @@
+# Production compose. For local dev, override `Caddyfile` mount with `Caddyfile.dev`
+# via a `docker-compose.override.yml` or by editing this file.
+
+version: "3.8"
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - backend
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    # No `ports:` mapping — only Caddy is exposed to the host.
+    # Internal port 3000 is reachable from other services as `frontend:3000`.
+    expose:
+      - "3000"
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    # No `ports:` mapping — reachable internally as `backend:8000`.
+    expose:
+      - "8000"
+    env_file:
+      - ./backend/.env
+    depends_on:
+      - postgres
+      - qdrant
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # For local debugging, uncomment to expose Postgres on the host:
+    # ports:
+    #   - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    restart: unless-stopped
+    # No port exposed to host — reachable internally as `qdrant:6333`.
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+volumes:
+  caddy_data:
+  caddy_config:
+  postgres_data:
+  qdrant_data:

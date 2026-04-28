@@ -1,0 +1,20 @@
+# Local dev Caddyfile — no TLS, just localhost routing.
+# To use: replace the `Caddyfile` mount in docker-compose.yml with this file,
+# OR run `caddy run --config Caddyfile.dev` directly on the host.
+
+{
+	auto_https off
+}
+
+:80 {
+	@frontend host localhost
+	@backend host api.localhost
+
+	handle @frontend {
+		reverse_proxy frontend:3000
+	}
+
+	handle @backend {
+		reverse_proxy backend:8000
+	}
+}

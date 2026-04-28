@@ -1,0 +1,15 @@
+# Production Caddyfile — auto-TLS via Let's Encrypt.
+# Replace `yourdomain.com` and `api.yourdomain.com` with the real domain before deploying.
+
+yourdomain.com {
+	reverse_proxy frontend:3000
+	encode gzip zstd
+}
+
+api.yourdomain.com {
+	reverse_proxy backend:8000
+	encode gzip zstd
+
+	# Pass through real client IP for rate limiting / logging
+	header_up X-Real-IP {remote_host}
+}

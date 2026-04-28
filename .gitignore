@@ -1,0 +1,57 @@
+# Environment
+.env
+.env.local
+.env.*.local
+*.env.local
+
+# Python
+backend/venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+.eslintcache
+.turbo/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude Code (local-only settings)
+.claude/settings.local.json
+
+# Coverage
+coverage/
+.coverage
+htmlcov/
+
+# Caddy data volumes (if mounted to host)
+caddy_data/
+caddy_config/
+
+# Backend temp uploads
+backend/uploads/
+backend/tmp/
