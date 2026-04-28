@@ -1,0 +1,960 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>FinanceAI — Onboarding</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --white:#ffffff;
+    --gray-50:#fafafa;
+    --gray-100:#f4f4f4;
+    --gray-200:#e8e8e8;
+    --gray-300:#d4d4d4;
+    --gray-400:#a3a3a3;
+    --gray-500:#737373;
+    --gray-600:#525252;
+    --gray-700:#404040;
+    --gray-800:#262626;
+    --gray-900:#171717;
+    --gray-950:#0a0a0a;
+    --black:#000000;
+
+    --serif:"Instrument Serif", "Times New Roman", serif;
+    --sans:"Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --mono:"Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+    --ease: cubic-bezier(.2,.7,.2,1);
+  }
+  *,*::before,*::after{box-sizing:border-box}
+  html,body{margin:0;padding:0;min-height:100%}
+  body{
+    font-family:var(--sans);
+    color:var(--gray-900);
+    background:var(--white);
+    -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
+    font-size:16px;
+    line-height:1.5;
+  }
+  a{color:inherit;text-decoration:none}
+  button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+  input{font:inherit}
+
+  .shell{
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+  }
+
+  /* ====== TOP BAR ====== */
+  .topbar{
+    height:72px;
+    display:flex;
+    align-items:center;
+    padding:0 40px;
+    border-bottom:1px solid var(--gray-100);
+    position:sticky; top:0;
+    background:rgba(255,255,255,.85);
+    backdrop-filter:saturate(180%) blur(14px);
+    -webkit-backdrop-filter:saturate(180%) blur(14px);
+    z-index:5;
+  }
+  .topbar-inner{
+    width:100%;
+    max-width:920px;
+    margin:0 auto;
+    display:grid;
+    grid-template-columns:1fr auto 1fr;
+    align-items:center;
+    gap:24px;
+  }
+  .logo{
+    font-family:var(--serif);
+    font-size:20px;
+    line-height:1;
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    color:var(--gray-950);
+  }
+  .logo-mark{
+    width:20px;height:20px;border-radius:50%;background:var(--gray-950);
+    position:relative;display:inline-block;
+  }
+  .logo-mark::after{
+    content:""; position:absolute; inset:5px; border-radius:50%; background:var(--white);
+  }
+  .progress{
+    display:flex;align-items:center;gap:14px;
+    justify-self:center;
+  }
+  .dashes{display:flex;gap:6px}
+  .dash{
+    width:36px;height:3px;
+    background:var(--gray-200);
+    border-radius:2px;
+    overflow:hidden;
+    position:relative;
+  }
+  .dash::after{
+    content:"";
+    position:absolute;
+    inset:0;
+    background:var(--gray-950);
+    transform-origin:left center;
+    transform:scaleX(0);
+    transition:transform .55s var(--ease);
+  }
+  .dash.done::after{transform:scaleX(1)}
+  .dash.active::after{transform:scaleX(1)}
+  .step-counter{
+    font-family:var(--mono);
+    font-size:13px;
+    color:var(--gray-400);
+    letter-spacing:.02em;
+    font-variant-numeric:tabular-nums;
+  }
+  .step-counter strong{color:var(--gray-950);font-weight:500}
+
+  .topbar-right{
+    justify-self:end;
+  }
+  .ghost-btn{
+    display:inline-flex;align-items:center;gap:8px;
+    height:36px; padding:0 14px;
+    font-size:13px; color:var(--gray-600);
+    border-radius:999px;
+    transition:background-color .2s var(--ease), color .2s var(--ease), transform .2s var(--ease);
+  }
+  .ghost-btn:hover{background:var(--gray-100); color:var(--gray-950)}
+  .ghost-btn[hidden]{display:none}
+
+  /* ====== STAGE ====== */
+  .stage{
+    flex:1;
+    display:flex;
+    align-items:flex-start;
+    justify-content:center;
+    padding:72px 32px 96px;
+    position:relative;
+  }
+  .step-wrap{
+    width:100%;
+    max-width:560px;
+    position:relative;
+  }
+  .step{
+    width:100%;
+    transition:opacity .25s var(--ease), transform .25s var(--ease);
+  }
+  .step[hidden]{display:none}
+  .step.leave-left{opacity:0;transform:translateX(-24px)}
+  .step.enter-right{opacity:0;transform:translateX(24px)}
+
+  .step-eyebrow{
+    font-family:var(--mono);
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.16em;
+    color:var(--gray-400);
+    margin-bottom:18px;
+    display:inline-flex;
+    align-items:center;gap:10px;
+  }
+  .step-eyebrow::before{
+    content:"";
+    width:24px;height:1px;
+    background:var(--gray-300);
+    display:inline-block;
+  }
+  h1.step-title{
+    font-family:var(--serif);
+    font-weight:400;
+    font-size:clamp(32px, 4.4vw, 44px);
+    line-height:1.05;
+    letter-spacing:-.02em;
+    color:var(--gray-950);
+    margin:0 0 12px;
+  }
+  h1.step-title em{font-style:italic;color:var(--gray-700);font-weight:400}
+  .step-sub{
+    font-size:16px;
+    line-height:1.6;
+    color:var(--gray-500);
+    margin:0 0 40px;
+    max-width:46ch;
+  }
+
+  /* ====== INPUTS ====== */
+  .label{
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.12em;
+    color:var(--gray-500);
+    font-weight:500;
+    display:block;
+    margin-bottom:10px;
+  }
+  .input{
+    width:100%;
+    height:48px;
+    padding:0 16px;
+    font-size:15px;
+    color:var(--gray-950);
+    background:var(--white);
+    border:1px solid var(--gray-300);
+    border-radius:8px;
+    outline:none;
+    transition:border-color .15s var(--ease), box-shadow .15s var(--ease);
+  }
+  .input:hover{border-color:var(--gray-400)}
+  .input:focus{
+    border-color:var(--gray-950);
+    box-shadow:0 0 0 3px rgba(10,10,10,.06);
+  }
+
+  .currency-input{
+    position:relative;
+  }
+  .currency-input .prefix{
+    position:absolute;
+    left:16px; top:50%; transform:translateY(-50%);
+    font-size:15px; color:var(--gray-500);
+    font-weight:500;
+    pointer-events:none;
+  }
+  .currency-input .input{padding-left:40px;font-variant-numeric:tabular-nums}
+
+  /* ====== RADIO CARDS ====== */
+  .field-block{margin-bottom:32px}
+
+  .radio-stack{
+    display:flex;flex-direction:column;gap:0;
+    border-top:1px solid var(--gray-200);
+  }
+  .radio-card{
+    display:flex;
+    align-items:center;
+    gap:18px;
+    padding:18px 20px 18px 24px;
+    border-bottom:1px solid var(--gray-200);
+    border-left:2px solid transparent;
+    cursor:pointer;
+    position:relative;
+    transition:background-color .2s var(--ease), border-color .25s var(--ease), padding-left .25s var(--ease);
+    user-select:none;
+  }
+  .radio-card:hover{background:var(--gray-50)}
+  .radio-card .num{
+    font-family:var(--serif);
+    font-size:22px;
+    color:var(--gray-300);
+    width:22px;text-align:center;
+    transition:color .25s var(--ease);
+    line-height:1;
+    font-variant-numeric:tabular-nums;
+  }
+  .radio-card .body{flex:1;min-width:0}
+  .radio-card .body .name{
+    font-size:15px;
+    font-weight:500;
+    color:var(--gray-950);
+    line-height:1.3;
+  }
+  .radio-card .body .desc{
+    font-size:13px;
+    color:var(--gray-500);
+    margin-top:2px;
+    line-height:1.4;
+  }
+  .radio-card .check{
+    width:20px;height:20px;
+    border:1px solid var(--gray-300);
+    border-radius:50%;
+    display:grid;place-items:center;
+    transition:border-color .2s var(--ease), background-color .2s var(--ease);
+    flex:0 0 auto;
+  }
+  .radio-card .check svg{
+    width:10px;height:10px;color:var(--white);
+    opacity:0;transform:scale(.5);
+    transition:opacity .2s var(--ease), transform .2s var(--ease);
+  }
+  .radio-card.selected{
+    border-left-color:var(--gray-950);
+    border-bottom-color:var(--gray-950);
+    background:var(--white);
+  }
+  .radio-card.selected + .radio-card{border-top:1px solid var(--gray-950);margin-top:-1px}
+  .radio-card.selected .num{color:var(--gray-950)}
+  .radio-card.selected .check{background:var(--gray-950);border-color:var(--gray-950)}
+  .radio-card.selected .check svg{opacity:1;transform:scale(1)}
+
+  /* ====== ACCOUNT GRID (Step 2) ====== */
+  .acc-grid{
+    display:grid;
+    grid-template-columns:repeat(3, 1fr);
+    gap:10px;
+    margin-bottom:28px;
+  }
+  .acc-card{
+    border:1px solid var(--gray-200);
+    border-radius:10px;
+    padding:18px 14px;
+    display:flex;
+    flex-direction:column;
+    align-items:flex-start;
+    gap:10px;
+    background:var(--white);
+    cursor:pointer;
+    position:relative;
+    min-height:96px;
+    transition:border-color .25s var(--ease), background-color .2s var(--ease), transform .15s var(--ease);
+    user-select:none;
+  }
+  .acc-card:hover{border-color:var(--gray-400)}
+  .acc-card .acc-logo{
+    width:32px;height:32px;
+    border-radius:8px;
+    background:var(--gray-100);
+    display:grid;place-items:center;
+    font-family:var(--serif);
+    font-size:15px;
+    color:var(--gray-800);
+    line-height:1;
+    font-weight:500;
+    transition:background-color .2s var(--ease), color .2s var(--ease);
+  }
+  .acc-card .acc-name{
+    font-size:14px;
+    font-weight:500;
+    color:var(--gray-950);
+  }
+  .acc-card .acc-type{
+    font-size:11px;
+    color:var(--gray-400);
+    text-transform:uppercase;
+    letter-spacing:.08em;
+  }
+  .acc-card .acc-check{
+    position:absolute;
+    top:12px;right:12px;
+    width:18px;height:18px;
+    border-radius:50%;
+    background:var(--gray-950);
+    display:grid;place-items:center;
+    transform:scale(0);
+    transition:transform .25s var(--ease);
+  }
+  .acc-card .acc-check svg{width:10px;height:10px;color:var(--white)}
+  .acc-card.selected{
+    border-color:var(--gray-950);
+    box-shadow:inset 0 0 0 1px var(--gray-950);
+  }
+  .acc-card.selected .acc-check{transform:scale(1)}
+  .acc-card.selected .acc-logo{background:var(--gray-950);color:var(--white)}
+  .acc-card.other{
+    border-style:dashed;
+    align-items:center;
+    justify-content:center;
+    color:var(--gray-500);
+    flex-direction:row;
+    gap:8px;
+  }
+  .acc-card.other .plus{
+    font-family:var(--serif);
+    font-size:22px;
+    color:var(--gray-500);
+    line-height:1;
+  }
+
+  /* ====== OPTION LIST (Step 3) ====== */
+  .opt-list{
+    display:flex;flex-direction:column;gap:10px;
+    margin-bottom:32px;
+  }
+  .opt{
+    display:flex;
+    align-items:center;
+    gap:18px;
+    padding:20px 22px;
+    border:1px solid var(--gray-200);
+    border-radius:10px;
+    background:var(--white);
+    cursor:pointer;
+    position:relative;
+    transition:border-color .25s var(--ease), background-color .2s var(--ease);
+    user-select:none;
+  }
+  .opt:hover{border-color:var(--gray-400)}
+  .opt.selected{
+    border-color:var(--gray-950);
+    box-shadow:inset 0 0 0 1px var(--gray-950);
+  }
+  .opt-icon{
+    width:44px;height:44px;
+    border-radius:10px;
+    background:var(--gray-100);
+    display:grid;place-items:center;
+    color:var(--gray-700);
+    flex:0 0 auto;
+    transition:background-color .2s var(--ease), color .2s var(--ease);
+  }
+  .opt.selected .opt-icon{background:var(--gray-950);color:var(--white)}
+  .opt-icon svg{width:20px;height:20px}
+  .opt-body{flex:1;min-width:0}
+  .opt-title{
+    font-size:15px; font-weight:500; color:var(--gray-950);
+    display:flex;align-items:center;gap:10px;
+    line-height:1.3;
+  }
+  .opt-title .badge{
+    font-family:var(--mono);
+    font-size:10px;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+    padding:3px 8px;
+    background:var(--gray-950);
+    color:var(--white);
+    border-radius:999px;
+    font-weight:500;
+  }
+  .opt-desc{font-size:13px;color:var(--gray-500);margin-top:2px;line-height:1.45}
+  .opt-radio{
+    width:18px;height:18px;
+    border:1px solid var(--gray-300);
+    border-radius:50%;
+    flex:0 0 auto;
+    display:grid;place-items:center;
+    transition:border-color .2s var(--ease);
+  }
+  .opt-radio::after{
+    content:"";
+    width:8px;height:8px;border-radius:50%;
+    background:var(--gray-950);
+    transform:scale(0);
+    transition:transform .2s var(--ease);
+  }
+  .opt.selected .opt-radio{border-color:var(--gray-950)}
+  .opt.selected .opt-radio::after{transform:scale(1)}
+
+  .opt.skip{background:var(--gray-50);border-style:dashed}
+  .opt.skip .opt-title{color:var(--gray-600);font-weight:400}
+  .opt.skip .opt-icon{background:transparent;color:var(--gray-400)}
+
+  /* ====== CTA ====== */
+  .cta-row{
+    margin-top:8px;
+  }
+  .btn-primary{
+    width:100%;
+    height:52px;
+    border-radius:999px;
+    font-size:14px;
+    font-weight:500;
+    background:var(--gray-950);
+    color:var(--white);
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+    transition:background-color .2s var(--ease), opacity .25s var(--ease), transform .2s var(--ease);
+    position:relative;
+    overflow:hidden;
+  }
+  .btn-primary:hover{transform:translateY(-1px); background:var(--black)}
+  .btn-primary[disabled]{
+    background:var(--gray-200);
+    color:var(--gray-500);
+    cursor:not-allowed;
+    transform:none;
+  }
+  .btn-primary .arrow{
+    transition:transform .25s var(--ease);
+    display:inline-block;
+    font-family:var(--serif);
+    font-size:18px;
+    line-height:1;
+  }
+  .btn-primary:not([disabled]):hover .arrow{transform:translateX(4px)}
+
+  .secure-note{
+    margin-top:18px;
+    font-size:12px;
+    color:var(--gray-400);
+    text-align:center;
+    display:flex;align-items:center;justify-content:center;gap:6px;
+  }
+  .secure-note svg{width:12px;height:12px}
+
+  /* ====== DONE OVERLAY ====== */
+  .done-overlay{
+    position:fixed;
+    inset:0;
+    background:var(--white);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center; padding:40px;
+    opacity:0; pointer-events:none;
+    transition:opacity .35s var(--ease);
+    z-index:50;
+  }
+  .done-overlay.show{opacity:1;pointer-events:auto}
+  .done-circle{
+    width:80px;height:80px;border-radius:50%;
+    background:var(--gray-950);
+    display:grid;place-items:center;
+    margin:0 auto 24px;
+    transform:scale(.7);opacity:0;
+    transition:transform .45s var(--ease) .1s, opacity .35s var(--ease) .1s;
+  }
+  .done-overlay.show .done-circle{transform:scale(1);opacity:1}
+  .done-circle svg{width:36px;height:36px;color:var(--white)}
+  .done-circle path{
+    stroke-dasharray:30;stroke-dashoffset:30;
+    transition:stroke-dashoffset .55s var(--ease) .35s;
+  }
+  .done-overlay.show .done-circle path{stroke-dashoffset:0}
+  .done-overlay h2{
+    font-family:var(--serif);font-weight:400;
+    font-size:36px;letter-spacing:-.01em;color:var(--gray-950);
+    margin:0 0 8px;
+  }
+  .done-overlay h2 em{font-style:italic;color:var(--gray-600);font-weight:400}
+  .done-overlay p{font-size:15px;color:var(--gray-500);margin:0 0 28px;max-width:38ch}
+
+  /* ====== RESPONSIVE ====== */
+  @media (max-width: 720px){
+    .topbar{padding:0 20px;height:64px}
+    .topbar-inner{grid-template-columns:auto 1fr auto;gap:16px}
+    .dash{width:24px}
+    .stage{padding:48px 20px 64px}
+    .acc-grid{grid-template-columns:repeat(2, 1fr)}
+    h1.step-title{font-size:30px}
+    .step-sub{font-size:15px;margin-bottom:32px}
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{animation-duration:.001s !important;transition-duration:.001s !important}
+  }
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- ====== TOP BAR ====== -->
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div>
+        <button class="ghost-btn" id="backBtn" hidden>
+          <span style="font-family:var(--serif);font-size:18px;line-height:1">←</span>
+          Kembali
+        </button>
+      </div>
+
+      <div class="progress" aria-label="Progress onboarding">
+        <div class="dashes" id="dashes">
+          <span class="dash active" data-step="1"></span>
+          <span class="dash" data-step="2"></span>
+          <span class="dash" data-step="3"></span>
+        </div>
+        <div class="step-counter"><strong id="curStep">1</strong> / 3</div>
+      </div>
+
+      <div class="topbar-right">
+        <a href="Auth Pages.html#login" class="ghost-btn">Keluar</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- ====== STAGE ====== -->
+  <main class="stage">
+    <div class="step-wrap" id="stepWrap">
+
+      <!-- ===== STEP 1 ===== -->
+      <section class="step" data-step="1">
+        <div class="step-eyebrow">Profil &amp; tujuan</div>
+        <h1 class="step-title">Hai! Kita mulai <em>dari kamu.</em></h1>
+        <p class="step-sub">Ini membantu kami personalisasi insight untuk kondisi keuangan kamu.</p>
+
+        <div class="field-block">
+          <label class="label" for="nick">Nama panggilan</label>
+          <input id="nick" class="input" type="text" placeholder="Misal: Rizky" autocomplete="given-name" />
+        </div>
+
+        <div class="field-block">
+          <label class="label">Tujuan keuangan utama</label>
+          <div class="radio-stack" role="radiogroup" aria-label="Tujuan keuangan utama">
+            <div class="radio-card" data-goal="save" tabindex="0" role="radio" aria-checked="false">
+              <span class="num">01</span>
+              <div class="body">
+                <div class="name">Tabung lebih banyak setiap bulan</div>
+                <div class="desc">Bangun dana darurat dan habit nabung yang konsisten.</div>
+              </div>
+              <span class="check"><svg viewBox="0 0 12 12" fill="none"><path d="M2.5 6.5l2.4 2.4L9.5 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            </div>
+            <div class="radio-card" data-goal="track" tabindex="0" role="radio" aria-checked="false">
+              <span class="num">02</span>
+              <div class="body">
+                <div class="name">Track semua aset dan investasi</div>
+                <div class="desc">Lihat net worth real-time dari semua platform yang kamu punya.</div>
+              </div>
+              <span class="check"><svg viewBox="0 0 12 12" fill="none"><path d="M2.5 6.5l2.4 2.4L9.5 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            </div>
+            <div class="radio-card" data-goal="debt" tabindex="0" role="radio" aria-checked="false">
+              <span class="num">03</span>
+              <div class="body">
+                <div class="name">Kelola utang dan cicilan</div>
+                <div class="desc">Pantau KPR, cicilan kartu kredit, dan rencana lunasnya.</div>
+              </div>
+              <span class="check"><svg viewBox="0 0 12 12" fill="none"><path d="M2.5 6.5l2.4 2.4L9.5 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            </div>
+            <div class="radio-card" data-goal="retire" tabindex="0" role="radio" aria-checked="false">
+              <span class="num">04</span>
+              <div class="body">
+                <div class="name">Rencanakan pensiun dini</div>
+                <div class="desc">Set target FIRE dan track progress kamu setiap bulan.</div>
+              </div>
+              <span class="check"><svg viewBox="0 0 12 12" fill="none"><path d="M2.5 6.5l2.4 2.4L9.5 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="cta-row">
+          <button class="btn-primary" data-next="1" disabled>
+            Lanjut <span class="arrow">→</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- ===== STEP 2 ===== -->
+      <section class="step" data-step="2" hidden>
+        <div class="step-eyebrow">Rekening pertama</div>
+        <h1 class="step-title">Rekening mana yang paling sering <em>kamu pakai?</em></h1>
+        <p class="step-sub">Kamu bisa tambah lebih banyak nanti. Pilih satu atau beberapa untuk mulai.</p>
+
+        <div class="field-block">
+          <label class="label">Bank &amp; e-wallet</label>
+          <div class="acc-grid" id="accGrid">
+            <div class="acc-card" data-acc="BCA" tabindex="0" role="checkbox" aria-checked="false">
+              <span class="acc-logo">B</span>
+              <div>
+                <div class="acc-name">BCA</div>
+                <div class="acc-type">Bank</div>
+              </div>
+              <span class="acc-check"><svg viewBox="0 0 12 12" fill="none"><path d="M2.5 6.5l2.4 2.4L9.5 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            </div>
+            <div class="acc-card" data-acc="Mandiri" tabindex="0" role="checkbox" aria-checked="false">
+              <span class="acc-logo">M</span>
+              <div>
+                <div class="acc-name">Mandiri</div>
+                <div class="acc-type">Bank</div>
+              </div>
+              <span class="acc-check"><svg viewBox="0 0 12 12" fill="none"><path d="M2.5 6.5l2.4 2.4L9.5 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            </div>
+            <div class="acc-card" data-acc="BRI" tabindex="0" role="checkbox" aria-checked="false">
+              <span class="acc-logo">B</span>
+              <div>
+                <div class="acc-name">BRI</div>
+                <div class="acc-type">Bank</div>
+              </div>
+              <span class="acc-check"><svg viewBox="0 0 12 12" fill="none"><path d="M2.5 6.5l2.4 2.4L9.5 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            </div>
+            <div class="acc-card" data-acc="BNI" tabindex="0" role="checkbox" aria-checked="false">
+              <span class="acc-logo">N</span>
+              <div>
+                <div class="acc-name">BNI</div>
+                <div class="acc-type">Bank</div>
+              </div>
+              <span class="acc-check"><svg viewBox="0 0 12 12" fill="none"><path d="M2.5 6.5l2.4 2.4L9.5 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            </div>
+            <div class="acc-card" data-acc="GoPay" tabindex="0" role="checkbox" aria-checked="false">
+              <span class="acc-logo">G</span>
+              <div>
+                <div class="acc-name">GoPay</div>
+                <div class="acc-type">E-wallet</div>
+              </div>
+              <span class="acc-check"><svg viewBox="0 0 12 12" fill="none"><path d="M2.5 6.5l2.4 2.4L9.5 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            </div>
+            <div class="acc-card" data-acc="OVO" tabindex="0" role="checkbox" aria-checked="false">
+              <span class="acc-logo">O</span>
+              <div>
+                <div class="acc-name">OVO</div>
+                <div class="acc-type">E-wallet</div>
+              </div>
+              <span class="acc-check"><svg viewBox="0 0 12 12" fill="none"><path d="M2.5 6.5l2.4 2.4L9.5 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            </div>
+          </div>
+
+          <div class="acc-card other" data-acc="other" tabindex="0" role="button" style="grid-column:span 3;display:flex;flex-direction:row;justify-content:center;min-height:auto;padding:14px">
+            <span class="plus">+</span>
+            <span style="font-size:13px;color:var(--gray-600)">Lainnya — Jenius, Permata, Stockbit, …</span>
+          </div>
+        </div>
+
+        <div class="field-block">
+          <label class="label" for="balance">Saldo saat ini (estimasi)</label>
+          <div class="currency-input">
+            <span class="prefix">Rp</span>
+            <input id="balance" class="input" type="text" inputmode="numeric" placeholder="0" />
+          </div>
+          <div style="font-size:12px;color:var(--gray-400);margin-top:8px">Tidak perlu presisi — bisa kamu update kapan saja.</div>
+        </div>
+
+        <div class="cta-row">
+          <button class="btn-primary" data-next="2" disabled>
+            Lanjut <span class="arrow">→</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- ===== STEP 3 ===== -->
+      <section class="step" data-step="3" hidden>
+        <div class="step-eyebrow">Cara import data</div>
+        <h1 class="step-title">Pilih cara import data <em>pertama kamu.</em></h1>
+        <p class="step-sub">Pilih yang paling mudah untuk kamu sekarang. Kamu bisa coba metode lain nanti.</p>
+
+        <div class="opt-list" id="optList" role="radiogroup" aria-label="Cara import data">
+          <div class="opt" data-opt="pdf" tabindex="0" role="radio" aria-checked="false">
+            <div class="opt-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></svg>
+            </div>
+            <div class="opt-body">
+              <div class="opt-title">Upload PDF Mutasi <span class="badge">Direkomendasikan</span></div>
+              <div class="opt-desc">Export dari m-banking kamu, upload di sini. AI mengekstrak transaksi, kategori, dan saldo.</div>
+            </div>
+            <span class="opt-radio" aria-hidden="true"></span>
+          </div>
+
+          <div class="opt" data-opt="screenshot" tabindex="0" role="radio" aria-checked="false">
+            <div class="opt-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="12" cy="12" r="3.2"/><path d="M8 5l1.5-2h5L16 5"/></svg>
+            </div>
+            <div class="opt-body">
+              <div class="opt-title">Foto Screenshot</div>
+              <div class="opt-desc">Screenshot dashboard investasi kamu — Bibit, IPOT, Stockbit, Pluang. AI baca semuanya.</div>
+            </div>
+            <span class="opt-radio" aria-hidden="true"></span>
+          </div>
+
+          <div class="opt" data-opt="manual" tabindex="0" role="radio" aria-checked="false">
+            <div class="opt-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l4-4 4 4 7-7"/><path d="M14 6h6v6"/></svg>
+            </div>
+            <div class="opt-body">
+              <div class="opt-title">Input Manual</div>
+              <div class="opt-desc">Masukkan transaksi satu per satu. Cocok kalau kamu suka kontrol penuh.</div>
+            </div>
+            <span class="opt-radio" aria-hidden="true"></span>
+          </div>
+
+          <div class="opt skip" data-opt="skip" tabindex="0" role="radio" aria-checked="false">
+            <div class="opt-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+            </div>
+            <div class="opt-body">
+              <div class="opt-title">Lewati dulu</div>
+              <div class="opt-desc">Saya akan setup nanti. Bawa saya ke dashboard.</div>
+            </div>
+            <span class="opt-radio" aria-hidden="true"></span>
+          </div>
+        </div>
+
+        <div class="cta-row">
+          <button class="btn-primary" data-next="3" disabled>
+            Mulai <span class="arrow">→</span>
+          </button>
+        </div>
+
+        <div class="secure-note">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+          Semua data kamu terenkripsi end-to-end dan aman.
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<!-- Done overlay -->
+<div class="done-overlay" id="doneOverlay" aria-live="polite">
+  <div class="done-circle">
+    <svg viewBox="0 0 24 24" fill="none">
+      <path d="M5 12.5l4.5 4.5L19 7.5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </div>
+  <h2>Setup <em>selesai.</em></h2>
+  <p>Mengarahkan kamu ke dashboard FinanceAI...</p>
+</div>
+
+<script>
+  // ===== state =====
+  const state = {
+    step: 1,
+    nick: '',
+    goal: null,
+    accounts: new Set(),
+    balance: '',
+    importMethod: null,
+  };
+
+  const stepEls = document.querySelectorAll('.step');
+  const dashes = document.querySelectorAll('.dash');
+  const curStep = document.getElementById('curStep');
+  const backBtn = document.getElementById('backBtn');
+
+  // ===== step navigation =====
+  function showStep(target, dir){
+    const current = document.querySelector('.step:not([hidden])');
+    const next = document.querySelector(`.step[data-step="${target}"]`);
+    if(!next || current === next) return;
+
+    // out
+    current.classList.add(dir === 'forward' ? 'leave-left' : 'enter-right');
+    current.style.opacity = '0';
+    setTimeout(() => {
+      current.hidden = true;
+      current.classList.remove('leave-left','enter-right');
+      current.style.opacity = '';
+
+      // in
+      next.hidden = false;
+      next.classList.add(dir === 'forward' ? 'enter-right' : 'leave-left');
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          next.classList.remove('enter-right','leave-left');
+        });
+      });
+      // scroll to top of step
+      window.scrollTo({top:0, behavior:'smooth'});
+    }, 220);
+
+    state.step = target;
+    updateChrome();
+    refreshCTA();
+  }
+
+  function updateChrome(){
+    curStep.textContent = state.step;
+    dashes.forEach(d => {
+      const n = parseInt(d.dataset.step,10);
+      d.classList.toggle('done', n < state.step);
+      d.classList.toggle('active', n === state.step);
+    });
+    backBtn.hidden = state.step === 1;
+  }
+
+  backBtn.addEventListener('click', () => {
+    if(state.step > 1) showStep(state.step - 1, 'back');
+  });
+
+  document.querySelectorAll('[data-next]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const from = parseInt(btn.dataset.next,10);
+      if(from < 3){
+        showStep(from + 1, 'forward');
+      } else {
+        // finish
+        document.getElementById('doneOverlay').classList.add('show');
+        setTimeout(() => { window.location.href = 'Dashboard.html'; }, 1800);
+      }
+    });
+  });
+
+  // ===== STEP 1: nick + goal =====
+  const nick = document.getElementById('nick');
+  nick.addEventListener('input', () => { state.nick = nick.value.trim(); refreshCTA(); });
+
+  document.querySelectorAll('.radio-card').forEach(card => {
+    const select = () => {
+      document.querySelectorAll('.radio-card').forEach(c => {
+        c.classList.remove('selected');
+        c.setAttribute('aria-checked','false');
+      });
+      card.classList.add('selected');
+      card.setAttribute('aria-checked','true');
+      state.goal = card.dataset.goal;
+      refreshCTA();
+    };
+    card.addEventListener('click', select);
+    card.addEventListener('keydown', (e) => {
+      if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); select(); }
+    });
+  });
+
+  // ===== STEP 2: accounts + balance =====
+  document.querySelectorAll('.acc-card').forEach(card => {
+    const toggle = () => {
+      const v = card.dataset.acc;
+      if(card.classList.contains('other')){
+        // simulate "lainnya": toggle a synthetic id
+        const id = '_other';
+        if(state.accounts.has(id)){ state.accounts.delete(id); card.classList.remove('selected'); }
+        else { state.accounts.add(id); card.classList.add('selected'); }
+      } else {
+        if(state.accounts.has(v)){
+          state.accounts.delete(v);
+          card.classList.remove('selected');
+          card.setAttribute('aria-checked','false');
+        } else {
+          state.accounts.add(v);
+          card.classList.add('selected');
+          card.setAttribute('aria-checked','true');
+        }
+      }
+      refreshCTA();
+    };
+    card.addEventListener('click', toggle);
+    card.addEventListener('keydown', (e) => {
+      if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); toggle(); }
+    });
+  });
+
+  // currency formatting
+  const balance = document.getElementById('balance');
+  balance.addEventListener('input', () => {
+    const raw = balance.value.replace(/\D+/g,'');
+    state.balance = raw;
+    if(!raw){ balance.value = ''; return; }
+    balance.value = Number(raw).toLocaleString('id-ID');
+    refreshCTA();
+  });
+
+  // ===== STEP 3: import method =====
+  document.querySelectorAll('.opt').forEach(opt => {
+    const select = () => {
+      document.querySelectorAll('.opt').forEach(o => {
+        o.classList.remove('selected');
+        o.setAttribute('aria-checked','false');
+      });
+      opt.classList.add('selected');
+      opt.setAttribute('aria-checked','true');
+      state.importMethod = opt.dataset.opt;
+      refreshCTA();
+    };
+    opt.addEventListener('click', select);
+    opt.addEventListener('keydown', (e) => {
+      if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); select(); }
+    });
+  });
+
+  // ===== CTA enablement =====
+  function refreshCTA(){
+    const s1 = document.querySelector('[data-next="1"]');
+    const s2 = document.querySelector('[data-next="2"]');
+    const s3 = document.querySelector('[data-next="3"]');
+    s1.disabled = !(state.nick.length >= 2 && state.goal);
+    s2.disabled = state.accounts.size === 0;
+    s3.disabled = !state.importMethod;
+  }
+
+  // init
+  updateChrome();
+  refreshCTA();
+</script>
+</body>
+</html>

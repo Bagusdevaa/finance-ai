@@ -1,0 +1,922 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>FinanceAI — Masuk / Daftar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --white:#ffffff;
+    --gray-50:#fafafa;
+    --gray-100:#f4f4f4;
+    --gray-200:#e8e8e8;
+    --gray-300:#d4d4d4;
+    --gray-400:#a3a3a3;
+    --gray-500:#737373;
+    --gray-600:#525252;
+    --gray-700:#404040;
+    --gray-800:#262626;
+    --gray-900:#171717;
+    --gray-950:#0a0a0a;
+    --black:#000000;
+    --danger:#c0322a;
+    --danger-soft:#fdecea;
+
+    --serif:"Instrument Serif", "Times New Roman", serif;
+    --sans:"Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+
+    --ease: cubic-bezier(.2,.7,.2,1);
+  }
+
+  *,*::before,*::after{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%}
+  body{
+    font-family:var(--sans);
+    color:var(--gray-900);
+    background:var(--white);
+    -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
+    font-size:16px;
+    line-height:1.5;
+  }
+  a{color:inherit;text-decoration:none}
+  button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+
+  .auth{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    min-height:100vh;
+  }
+
+  /* ========== LEFT (BLACK) ========== */
+  .left{
+    background:var(--black);
+    color:var(--white);
+    padding:40px 56px;
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
+    position:relative;
+    overflow:hidden;
+  }
+  .left::before{
+    /* subtle texture */
+    content:"";
+    position:absolute;inset:0;
+    background:
+      radial-gradient(600px 360px at 80% 20%, rgba(255,255,255,.05), transparent 60%),
+      radial-gradient(500px 360px at 10% 90%, rgba(255,255,255,.04), transparent 60%);
+    pointer-events:none;
+  }
+  .left-top, .left-mid, .left-bot{position:relative;z-index:1}
+  .logo{
+    font-family:var(--serif);
+    font-size:22px;
+    font-weight:400;
+    letter-spacing:-.01em;
+    line-height:1;
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    color:var(--white);
+  }
+  .logo-mark{
+    width:22px;height:22px;border-radius:50%;
+    background:var(--white);
+    position:relative;
+    display:inline-block;
+  }
+  .logo-mark::after{
+    content:"";
+    position:absolute;
+    inset:6px;
+    border-radius:50%;
+    background:var(--black);
+  }
+  .left-mid{
+    margin:auto 0;
+    max-width:480px;
+  }
+  .quote-eyebrow{
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.16em;
+    color:var(--gray-500);
+    font-weight:500;
+    margin-bottom:36px;
+    display:inline-flex;
+    align-items:center;
+    gap:12px;
+  }
+  .quote-eyebrow::before{
+    content:"";
+    width:28px;height:1px;background:var(--gray-700);
+    display:inline-block;
+  }
+  .left-mid h2{
+    font-family:var(--serif);
+    font-weight:300;
+    font-size:clamp(28px, 3.2vw, 40px);
+    line-height:1.2;
+    letter-spacing:-.01em;
+    color:var(--white);
+    margin:0 0 20px;
+  }
+  .left-mid h2 em{
+    font-style:italic;
+    color:var(--gray-400);
+    font-weight:400;
+  }
+  .attribution{
+    font-size:13px;
+    color:var(--gray-500);
+    letter-spacing:.02em;
+  }
+  .left-bot{
+    display:flex;
+    align-items:center;
+    gap:14px;
+    color:var(--gray-500);
+    font-size:13px;
+  }
+  .avatars{display:flex}
+  .avatars span{
+    width:30px;height:30px;border-radius:50%;
+    border:1.5px solid var(--black);
+    margin-left:-8px;
+    display:inline-flex;
+    align-items:center;justify-content:center;
+    font-size:11px;
+    font-weight:500;
+    color:var(--white);
+    font-family:var(--serif);
+  }
+  .avatars span:nth-child(1){background:#3a3a3a;margin-left:0}
+  .avatars span:nth-child(2){background:#5e5e5e}
+  .avatars span:nth-child(3){background:#8a8a8a}
+
+  /* tiny ticker on left */
+  .ticker{
+    margin-top:36px;
+    display:flex;flex-direction:column;gap:10px;
+    padding:18px 20px;
+    border:1px solid var(--gray-800);
+    border-radius:14px;
+    background:rgba(255,255,255,.02);
+    max-width:340px;
+  }
+  .ticker-row{
+    display:flex;align-items:center;justify-content:space-between;
+    font-size:12px;
+    color:var(--gray-400);
+  }
+  .ticker-row .name{color:var(--gray-300);font-weight:500}
+  .ticker-row .val{font-variant-numeric:tabular-nums;color:var(--gray-500)}
+  .ticker-row .val.up::before{
+    content:"";
+    display:inline-block;
+    width:0;height:0;
+    border:4px solid transparent;
+    border-bottom-color:var(--gray-300);
+    margin-right:6px;
+    vertical-align:middle;
+  }
+
+  /* ========== RIGHT (WHITE) ========== */
+  .right{
+    background:var(--white);
+    padding:40px 56px;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    align-items:center;
+    position:relative;
+  }
+  .lang{
+    position:absolute;
+    top:36px;right:48px;
+    font-size:12px;
+    color:var(--gray-500);
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+  }
+  .lang strong{color:var(--gray-900);font-weight:500}
+
+  .panel{
+    width:100%;
+    max-width:380px;
+  }
+
+  /* tabs */
+  .tabs{
+    display:flex;
+    gap:0;
+    margin-bottom:36px;
+    border-bottom:1px solid var(--gray-200);
+    position:relative;
+  }
+  .tab{
+    flex:1;
+    text-align:center;
+    padding:12px 0 14px;
+    font-size:13px;
+    font-weight:500;
+    color:var(--gray-400);
+    transition:color .25s var(--ease);
+    position:relative;
+    letter-spacing:.01em;
+  }
+  .tab:hover{color:var(--gray-700)}
+  .tab.active{color:var(--gray-950)}
+  .tab-indicator{
+    position:absolute;
+    left:0;
+    bottom:-1px;
+    width:50%;
+    height:2px;
+    background:var(--gray-950);
+    transition:transform .35s var(--ease);
+  }
+  .tabs[data-mode="register"] .tab-indicator{transform:translateX(100%)}
+
+  /* form switching */
+  .form-stack{
+    position:relative;
+  }
+  .form{
+    transition:opacity .2s var(--ease);
+  }
+  .form[hidden]{display:none}
+  .form.fading{opacity:0}
+
+  .form h1{
+    font-family:var(--serif);
+    font-weight:400;
+    font-size:30px;
+    line-height:1.15;
+    letter-spacing:-.01em;
+    color:var(--gray-950);
+    margin:0 0 8px;
+  }
+  .form h1 em{font-style:italic;color:var(--gray-700);font-weight:400}
+  .form .sub{
+    font-size:14px;
+    color:var(--gray-500);
+    margin:0 0 28px;
+  }
+
+  .field{
+    margin-bottom:18px;
+  }
+  .field-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    margin-bottom:8px;
+  }
+  .label{
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.12em;
+    color:var(--gray-500);
+    font-weight:500;
+  }
+  .helper-link{
+    font-size:12px;
+    color:var(--gray-500);
+    transition:color .2s var(--ease);
+  }
+  .helper-link:hover{color:var(--gray-950)}
+
+  .input-wrap{
+    position:relative;
+  }
+  .input{
+    width:100%;
+    height:46px;
+    padding:0 14px;
+    font-size:14px;
+    font-family:var(--sans);
+    color:var(--gray-950);
+    background:var(--white);
+    border:1px solid var(--gray-300);
+    border-radius:8px;
+    transition:border-color .15s var(--ease), box-shadow .15s var(--ease), background-color .15s var(--ease);
+    outline:none;
+  }
+  .input::placeholder{color:var(--gray-400)}
+  .input:hover{border-color:var(--gray-400)}
+  .input:focus{
+    border-color:var(--gray-950);
+    box-shadow:0 0 0 3px rgba(10,10,10,.06);
+  }
+  .input.has-icon{padding-right:42px}
+
+  .input-icon{
+    position:absolute;
+    right:14px;top:50%;
+    transform:translateY(-50%);
+    color:var(--gray-400);
+    font-size:13px;
+    line-height:1;
+    cursor:pointer;
+    user-select:none;
+    transition:color .2s var(--ease);
+  }
+  .input-icon:hover{color:var(--gray-950)}
+
+  .field.error .input{
+    border-color:var(--danger);
+    background:var(--danger-soft);
+  }
+  .field.error .input:focus{
+    box-shadow:0 0 0 3px rgba(192,50,42,.12);
+  }
+  .field.success .input{
+    border-color:var(--gray-950);
+  }
+  .field.success .input-icon.check{color:var(--gray-950)}
+
+  .err{
+    display:none;
+    margin-top:6px;
+    font-size:12px;
+    color:var(--danger);
+    line-height:1.4;
+  }
+  .field.error .err{display:block}
+
+  .check-icon{
+    display:none;
+    width:16px;height:16px;
+  }
+  .field.success .check-icon{
+    display:inline-block;
+    animation:check-in .35s var(--ease);
+  }
+  @keyframes check-in{
+    from{opacity:0;transform:translateY(-50%) scale(.6)}
+    to{opacity:1;transform:translateY(-50%) scale(1)}
+  }
+
+  /* primary button with fill effect */
+  .btn{
+    width:100%;
+    height:48px;
+    border-radius:999px;
+    font-size:14px;
+    font-weight:500;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    position:relative;
+    overflow:hidden;
+    transition:transform .2s var(--ease), color .25s var(--ease), border-color .2s var(--ease);
+    isolation:isolate;
+  }
+  .btn-primary{
+    background:var(--gray-950);
+    color:var(--white);
+    margin-top:8px;
+  }
+  .btn-primary::before{
+    content:"";
+    position:absolute;
+    inset:0;
+    background:var(--black);
+    transform:translateX(-101%);
+    transition:transform .4s var(--ease);
+    z-index:-1;
+  }
+  .btn-primary:hover::before{transform:translateX(0)}
+  .btn-primary:hover{transform:translateY(-1px)}
+  .btn-primary:disabled{opacity:.6;cursor:not-allowed;transform:none}
+  .btn-primary:disabled::before{display:none}
+
+  .btn-secondary{
+    background:var(--white);
+    color:var(--gray-950);
+    border:1px solid var(--gray-300);
+    margin-top:0;
+  }
+  .btn-secondary::before{
+    content:"";
+    position:absolute;
+    inset:0;
+    background:var(--gray-100);
+    transform:translateX(-101%);
+    transition:transform .4s var(--ease);
+    z-index:-1;
+  }
+  .btn-secondary:hover::before{transform:translateX(0)}
+  .btn-secondary:hover{border-color:var(--gray-950)}
+
+  .divider{
+    display:flex;
+    align-items:center;
+    gap:14px;
+    margin:24px 0 18px;
+    color:var(--gray-400);
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.14em;
+    font-weight:500;
+  }
+  .divider::before, .divider::after{
+    content:"";
+    flex:1;
+    height:1px;
+    background:var(--gray-200);
+  }
+
+  .gicon{width:16px;height:16px}
+
+  .form-foot{
+    margin-top:28px;
+    text-align:center;
+    font-size:13px;
+    color:var(--gray-500);
+  }
+  .form-foot a{
+    color:var(--gray-950);
+    font-weight:500;
+    border-bottom:1px solid transparent;
+    transition:border-color .2s var(--ease);
+  }
+  .form-foot a:hover{border-bottom-color:var(--gray-950)}
+
+  .terms{
+    margin-top:20px;
+    text-align:center;
+    font-size:11px;
+    color:var(--gray-400);
+    line-height:1.5;
+    max-width:300px;
+    margin-left:auto;margin-right:auto;
+  }
+  .terms a{
+    color:var(--gray-600);
+    border-bottom:1px solid var(--gray-300);
+  }
+  .terms a:hover{color:var(--gray-950);border-bottom-color:var(--gray-950)}
+
+  /* password strength */
+  .pw-strength{
+    display:flex;gap:4px;margin-top:8px;
+  }
+  .pw-strength i{
+    flex:1;
+    height:3px;
+    border-radius:2px;
+    background:var(--gray-200);
+    transition:background-color .25s var(--ease);
+    display:inline-block;
+  }
+  .pw-strength.s1 i:nth-child(-n+1){background:var(--gray-400)}
+  .pw-strength.s2 i:nth-child(-n+2){background:var(--gray-700)}
+  .pw-strength.s3 i:nth-child(-n+3){background:var(--gray-900)}
+  .pw-strength.s4 i{background:var(--gray-950)}
+
+  .pw-hint{
+    margin-top:6px;
+    font-size:11px;
+    color:var(--gray-400);
+    display:flex;
+    justify-content:space-between;
+  }
+  .pw-hint .strength-label{color:var(--gray-600);font-weight:500}
+
+  /* success overlay */
+  .success-overlay{
+    position:absolute;
+    inset:0;
+    background:var(--white);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    opacity:0;
+    pointer-events:none;
+    transition:opacity .35s var(--ease);
+    text-align:center;
+    padding:40px;
+  }
+  .success-overlay.show{
+    opacity:1;
+    pointer-events:auto;
+  }
+  .check-circle{
+    width:72px;height:72px;
+    border-radius:50%;
+    background:var(--gray-950);
+    display:grid;place-items:center;
+    margin:0 auto 20px;
+    transform:scale(.6);
+    opacity:0;
+    transition:transform .45s var(--ease) .1s, opacity .35s var(--ease) .1s;
+  }
+  .success-overlay.show .check-circle{transform:scale(1);opacity:1}
+  .check-circle svg{width:32px;height:32px;color:var(--white)}
+  .check-circle path{
+    stroke-dasharray:24;
+    stroke-dashoffset:24;
+    transition:stroke-dashoffset .5s var(--ease) .35s;
+  }
+  .success-overlay.show .check-circle path{stroke-dashoffset:0}
+  .success-overlay h3{
+    font-family:var(--serif);
+    font-weight:400;
+    font-size:28px;
+    color:var(--gray-950);
+    margin:0 0 8px;
+    letter-spacing:-.01em;
+  }
+  .success-overlay p{
+    font-size:14px;color:var(--gray-500);margin:0;
+  }
+
+  /* ========== RESPONSIVE ========== */
+  @media (max-width: 880px){
+    .auth{grid-template-columns:1fr}
+    .left{display:none}
+    .right{padding:40px 24px;min-height:100vh}
+    .lang{top:20px;right:24px}
+    .panel{max-width:420px}
+  }
+  @media (max-width: 420px){
+    .form h1{font-size:26px}
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{animation-duration:.001s !important;transition-duration:.001s !important}
+  }
+</style>
+</head>
+<body>
+
+<main class="auth">
+
+  <!-- ========== LEFT ========== -->
+  <aside class="left" aria-hidden="false">
+    <div class="left-top">
+      <a href="Landing Page.html" class="logo" aria-label="FinanceAI — kembali ke beranda">
+        <span class="logo-mark" aria-hidden="true"></span>
+        FinanceAI
+      </a>
+    </div>
+
+    <div class="left-mid">
+      <div class="quote-eyebrow">Filosofi kami</div>
+      <h2>Angka tidak berbohong.<br/><em>Keuangan kamu seharusnya juga&nbsp;tidak.</em></h2>
+      <div class="attribution">— FinanceAI</div>
+
+      <div class="ticker" aria-hidden="true">
+        <div class="ticker-row"><span class="name">IHSG</span><span class="val up">7.428,12</span></div>
+        <div class="ticker-row"><span class="name">USD / IDR</span><span class="val">16.190</span></div>
+        <div class="ticker-row"><span class="name">Emas Antam</span><span class="val up">1.358.000 / gr</span></div>
+      </div>
+    </div>
+
+    <div class="left-bot">
+      <div class="avatars" aria-hidden="true">
+        <span>R</span><span>A</span><span>D</span>
+      </div>
+      Dipercaya 2.400+ pengguna aktif di Indonesia
+    </div>
+  </aside>
+
+  <!-- ========== RIGHT ========== -->
+  <section class="right">
+    <div class="lang" aria-hidden="true"><span>🇮🇩</span> <strong>ID</strong> · Bahasa Indonesia</div>
+
+    <div class="panel">
+      <div class="tabs" id="tabs" data-mode="login" role="tablist">
+        <button class="tab active" data-tab="login" role="tab" aria-selected="true">Masuk</button>
+        <button class="tab" data-tab="register" role="tab" aria-selected="false">Daftar</button>
+        <span class="tab-indicator" aria-hidden="true"></span>
+      </div>
+
+      <div class="form-stack">
+
+        <!-- ===== LOGIN ===== -->
+        <form class="form" id="loginForm" novalidate>
+          <h1>Selamat datang <em>kembali.</em></h1>
+          <p class="sub">Masuk ke akun FinanceAI kamu.</p>
+
+          <div class="field" data-field="email">
+            <div class="field-head">
+              <label class="label" for="loginEmail">Email</label>
+            </div>
+            <div class="input-wrap">
+              <input id="loginEmail" name="email" type="email" class="input" placeholder="kamu@email.com" autocomplete="email" />
+            </div>
+            <div class="err">Format email tidak valid.</div>
+          </div>
+
+          <div class="field" data-field="password">
+            <div class="field-head">
+              <label class="label" for="loginPassword">Password</label>
+              <a href="#" class="helper-link">Lupa password?</a>
+            </div>
+            <div class="input-wrap">
+              <input id="loginPassword" name="password" type="password" class="input has-icon" placeholder="••••••••" autocomplete="current-password" />
+              <span class="input-icon" data-toggle="loginPassword" role="button" tabindex="0" aria-label="Tampilkan password">Lihat</span>
+            </div>
+            <div class="err">Password minimal 8 karakter.</div>
+          </div>
+
+          <button type="submit" class="btn btn-primary">Masuk</button>
+
+          <div class="divider"><span>atau</span></div>
+
+          <button type="button" class="btn btn-secondary" data-google>
+            <svg class="gicon" viewBox="0 0 48 48" aria-hidden="true">
+              <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.3-.4-3.5z"/>
+              <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 16.3 4 9.7 8.4 6.3 14.7z"/>
+              <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35 26.7 36 24 36c-5.3 0-9.7-3.3-11.3-8l-6.5 5C9.6 39.5 16.2 44 24 44z"/>
+              <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.3-4.1 5.6l6.2 5.2C41.2 36 44 30.5 44 24c0-1.3-.1-2.3-.4-3.5z"/>
+            </svg>
+            Masuk dengan Google
+          </button>
+
+          <div class="form-foot">
+            Belum punya akun? <a href="#" data-switch="register">Daftar</a>
+          </div>
+        </form>
+
+        <!-- ===== REGISTER ===== -->
+        <form class="form" id="registerForm" novalidate hidden>
+          <h1>Mulai <em>gratis</em> hari ini.</h1>
+          <p class="sub">Buat akun FinanceAI dalam 60 detik.</p>
+
+          <div class="field" data-field="name">
+            <div class="field-head">
+              <label class="label" for="regName">Nama lengkap</label>
+            </div>
+            <div class="input-wrap">
+              <input id="regName" name="name" type="text" class="input" placeholder="Rizky Adiputra" autocomplete="name" />
+            </div>
+            <div class="err">Nama lengkap wajib diisi.</div>
+          </div>
+
+          <div class="field" data-field="email">
+            <div class="field-head">
+              <label class="label" for="regEmail">Email</label>
+            </div>
+            <div class="input-wrap">
+              <input id="regEmail" name="email" type="email" class="input has-icon" placeholder="kamu@email.com" autocomplete="email" />
+              <svg class="input-icon check check-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="position:absolute;right:14px;top:50%;transform:translateY(-50%)">
+                <path d="M3 8.5l3.2 3.2L13 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <div class="err">Format email tidak valid.</div>
+          </div>
+
+          <div class="field" data-field="password">
+            <div class="field-head">
+              <label class="label" for="regPassword">Password</label>
+            </div>
+            <div class="input-wrap">
+              <input id="regPassword" name="password" type="password" class="input has-icon" placeholder="Minimal 8 karakter" autocomplete="new-password" />
+              <span class="input-icon" data-toggle="regPassword" role="button" tabindex="0" aria-label="Tampilkan password">Lihat</span>
+            </div>
+            <div class="pw-strength" id="pwStrength" aria-hidden="true">
+              <i></i><i></i><i></i><i></i>
+            </div>
+            <div class="pw-hint">
+              <span>8+ karakter, kombinasi huruf &amp; angka</span>
+              <span class="strength-label" id="pwLabel"></span>
+            </div>
+            <div class="err">Password minimal 8 karakter.</div>
+          </div>
+
+          <div class="field" data-field="confirm">
+            <div class="field-head">
+              <label class="label" for="regConfirm">Konfirmasi password</label>
+            </div>
+            <div class="input-wrap">
+              <input id="regConfirm" name="confirm" type="password" class="input has-icon" placeholder="Ulangi password" autocomplete="new-password" />
+              <svg class="input-icon check check-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="position:absolute;right:14px;top:50%;transform:translateY(-50%)">
+                <path d="M3 8.5l3.2 3.2L13 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <div class="err">Password tidak cocok.</div>
+          </div>
+
+          <button type="submit" class="btn btn-primary">Buat Akun</button>
+
+          <div class="divider"><span>atau</span></div>
+
+          <button type="button" class="btn btn-secondary" data-google>
+            <svg class="gicon" viewBox="0 0 48 48" aria-hidden="true">
+              <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.3-.4-3.5z"/>
+              <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 16.3 4 9.7 8.4 6.3 14.7z"/>
+              <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35 26.7 36 24 36c-5.3 0-9.7-3.3-11.3-8l-6.5 5C9.6 39.5 16.2 44 24 44z"/>
+              <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.3-4.1 5.6l6.2 5.2C41.2 36 44 30.5 44 24c0-1.3-.1-2.3-.4-3.5z"/>
+            </svg>
+            Daftar dengan Google
+          </button>
+
+          <div class="form-foot">
+            Sudah punya akun? <a href="#" data-switch="login">Masuk</a>
+          </div>
+          <p class="terms">
+            Dengan mendaftar, kamu menyetujui <a href="#">Syarat &amp; Ketentuan</a> dan <a href="#">Kebijakan Privasi</a> kami.
+          </p>
+        </form>
+
+        <!-- success overlay -->
+        <div class="success-overlay" id="successOverlay" aria-live="polite">
+          <div class="check-circle">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M5 12.5l4.5 4.5L19 7.5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <h3 id="successTitle">Berhasil masuk.</h3>
+          <p id="successText">Mengarahkan ke dashboard kamu...</p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+  // ========== Tabs / form switching ==========
+  const tabs = document.getElementById('tabs');
+  const tabBtns = tabs.querySelectorAll('.tab');
+  const loginForm = document.getElementById('loginForm');
+  const registerForm = document.getElementById('registerForm');
+
+  function switchMode(mode){
+    if(tabs.dataset.mode === mode) return;
+    tabs.dataset.mode = mode;
+    tabBtns.forEach(b => {
+      const active = b.dataset.tab === mode;
+      b.classList.toggle('active', active);
+      b.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+
+    const incoming = mode === 'login' ? loginForm : registerForm;
+    const outgoing = mode === 'login' ? registerForm : loginForm;
+
+    outgoing.classList.add('fading');
+    setTimeout(() => {
+      outgoing.hidden = true;
+      outgoing.classList.remove('fading');
+      incoming.hidden = false;
+      incoming.classList.add('fading');
+      requestAnimationFrame(() => {
+        // double-rAF so the browser registers the starting opacity:0
+        requestAnimationFrame(() => incoming.classList.remove('fading'));
+      });
+    }, 200);
+
+    // sync URL hash for shareability
+    history.replaceState(null, '', '#' + mode);
+  }
+
+  tabBtns.forEach(b => b.addEventListener('click', () => switchMode(b.dataset.tab)));
+  document.querySelectorAll('[data-switch]').forEach(a => {
+    a.addEventListener('click', (e) => { e.preventDefault(); switchMode(a.dataset.switch); });
+  });
+
+  // honor hash on load
+  if(location.hash === '#register') switchMode('register');
+
+  // ========== Password visibility toggle ==========
+  document.querySelectorAll('[data-toggle]').forEach(el => {
+    const target = document.getElementById(el.dataset.toggle);
+    const flip = () => {
+      const isPw = target.type === 'password';
+      target.type = isPw ? 'text' : 'password';
+      el.textContent = isPw ? 'Sembunyi' : 'Lihat';
+    };
+    el.addEventListener('click', flip);
+    el.addEventListener('keydown', (e) => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); flip(); } });
+  });
+
+  // ========== Validation ==========
+  const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  function setError(field, on, msg){
+    field.classList.toggle('error', !!on);
+    field.classList.toggle('success', !on && field.dataset.touched === '1');
+    if(msg){ const e = field.querySelector('.err'); if(e) e.textContent = msg; }
+  }
+
+  function validateField(field){
+    const name = field.dataset.field;
+    const input = field.querySelector('input');
+    const v = input.value.trim();
+
+    if(name === 'email'){
+      if(!v){ setError(field, true, 'Email wajib diisi.'); return false; }
+      if(!emailRe.test(v)){ setError(field, true, 'Format email tidak valid.'); return false; }
+      setError(field, false); return true;
+    }
+    if(name === 'name'){
+      if(v.length < 2){ setError(field, true, 'Nama lengkap wajib diisi.'); return false; }
+      setError(field, false); return true;
+    }
+    if(name === 'password'){
+      if(v.length < 8){ setError(field, true, 'Password minimal 8 karakter.'); return false; }
+      setError(field, false); return true;
+    }
+    if(name === 'confirm'){
+      const pw = document.getElementById('regPassword').value;
+      if(v !== pw){ setError(field, true, 'Password tidak cocok.'); return false; }
+      if(!v){ setError(field, true, 'Konfirmasi wajib diisi.'); return false; }
+      setError(field, false); return true;
+    }
+    return true;
+  }
+
+  // touch-on-blur, validate-on-input-after-touch
+  document.querySelectorAll('.field').forEach(field => {
+    const input = field.querySelector('input');
+    if(!input) return;
+    input.addEventListener('blur', () => {
+      field.dataset.touched = '1';
+      validateField(field);
+    });
+    input.addEventListener('input', () => {
+      // remove error early as user types if previously errored
+      if(field.classList.contains('error') || field.dataset.touched === '1'){
+        validateField(field);
+      }
+      // if password changed, re-validate confirm
+      if(input.id === 'regPassword'){
+        const conf = document.querySelector('[data-field="confirm"]');
+        if(conf && conf.dataset.touched === '1') validateField(conf);
+      }
+    });
+  });
+
+  // ========== Password strength meter ==========
+  const pwInput = document.getElementById('regPassword');
+  const pwBar = document.getElementById('pwStrength');
+  const pwLabel = document.getElementById('pwLabel');
+  const pwLabels = ['', 'Lemah', 'Cukup', 'Bagus', 'Kuat'];
+
+  if(pwInput){
+    pwInput.addEventListener('input', () => {
+      const v = pwInput.value;
+      let score = 0;
+      if(v.length >= 8) score++;
+      if(/[A-Z]/.test(v) && /[a-z]/.test(v)) score++;
+      if(/\d/.test(v)) score++;
+      if(/[^A-Za-z0-9]/.test(v) || v.length >= 12) score++;
+      if(v.length === 0) score = 0;
+      pwBar.className = 'pw-strength' + (score ? ' s' + score : '');
+      pwLabel.textContent = pwLabels[score] || '';
+    });
+  }
+
+  // ========== Submit ==========
+  function showSuccess(title, text, dest){
+    document.getElementById('successTitle').textContent = title;
+    document.getElementById('successText').textContent = text;
+    document.getElementById('successOverlay').classList.add('show');
+    setTimeout(() => {
+      window.location.href = dest || 'Landing Page.html';
+    }, 1800);
+  }
+
+  loginForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const fields = loginForm.querySelectorAll('.field');
+    let ok = true;
+    fields.forEach(f => { f.dataset.touched = '1'; if(!validateField(f)) ok = false; });
+    if(!ok){
+      const firstErr = loginForm.querySelector('.field.error input');
+      if(firstErr) firstErr.focus();
+      return;
+    }
+    const btn = loginForm.querySelector('.btn-primary');
+    btn.disabled = true; btn.textContent = 'Memuat...';
+    setTimeout(() => showSuccess('Berhasil masuk.', 'Mengarahkan ke dashboard kamu...', 'Dashboard.html'), 700);
+  });
+
+  registerForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const fields = registerForm.querySelectorAll('.field');
+    let ok = true;
+    fields.forEach(f => { f.dataset.touched = '1'; if(!validateField(f)) ok = false; });
+    if(!ok){
+      const firstErr = registerForm.querySelector('.field.error input');
+      if(firstErr) firstErr.focus();
+      return;
+    }
+    const btn = registerForm.querySelector('.btn-primary');
+    btn.disabled = true; btn.textContent = 'Membuat akun...';
+    setTimeout(() => showSuccess('Akun kamu siap.', 'Mari kita setup dulu...', 'Onboarding.html'), 900);
+  });
+</script>
+</body>
+</html>
