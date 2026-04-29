@@ -752,7 +752,7 @@ function NotificationDropdown({ onClose }: { onClose: () => void }) {
 			animate={{ opacity: 1, y: 0 }}
 			exit={{ opacity: 0, y: -4 }}
 			transition={{ duration: 0.2, ease: easeDesignhub }}
-			className="absolute right-0 top-[calc(100%+6px)] z-20 w-[320px] border border-gray-200 bg-white shadow-[0_12px_32px_-8px_rgba(0,0,0,0.15)]"
+			className="fixed right-3 top-[70px] z-20 w-[calc(100vw-24px)] border border-gray-200 bg-white shadow-[0_12px_32px_-8px_rgba(0,0,0,0.15)] min-[375px]:absolute min-[375px]:right-0 min-[375px]:top-[calc(100%+6px)] min-[375px]:w-[320px]"
 		>
 			<div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
 				<span className="text-[13px] font-medium text-gray-950">Notifikasi</span>
