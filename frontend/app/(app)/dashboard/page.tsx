@@ -51,11 +51,11 @@ export default function DashboardPage() {
 		<>
 			<Header
 				greeting={
-					<h1 className="m-0 whitespace-nowrap font-serif text-[20px] font-normal leading-[1.1] tracking-tight2 text-gray-950 min-[375px]:text-[24px]">
+					<h1 className="m-0 whitespace-nowrap font-serif text-[18px] font-normal leading-[1.1] tracking-tight2 text-gray-950 sm:text-[24px]">
 						Selamat sore, <em className="font-normal italic text-gray-700">Bagus.</em>
 					</h1>
 				}
-				subtitle={<span className="hidden min-[375px]:inline"><TodayDate /></span>}
+				subtitle={<span className="hidden sm:inline"><TodayDate /></span>}
 				actions={
 					<>
 						<IconButton ariaLabel="Cari" onClick={() => setShowSearch(true)}>
@@ -752,7 +752,7 @@ function NotificationDropdown({ onClose }: { onClose: () => void }) {
 			animate={{ opacity: 1, y: 0 }}
 			exit={{ opacity: 0, y: -4 }}
 			transition={{ duration: 0.2, ease: easeDesignhub }}
-			className="fixed right-3 top-[70px] z-20 w-[calc(100vw-24px)] border border-gray-200 bg-white shadow-[0_12px_32px_-8px_rgba(0,0,0,0.15)] min-[375px]:absolute min-[375px]:right-0 min-[375px]:top-[calc(100%+6px)] min-[375px]:w-[320px]"
+			className="fixed right-3 top-[70px] z-20 w-[calc(100vw-24px)] max-w-[340px] border border-gray-200 bg-white shadow-[0_12px_32px_-8px_rgba(0,0,0,0.15)] sm:absolute sm:right-0 sm:top-[calc(100%+6px)] sm:w-[320px]"
 		>
 			<div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
 				<span className="text-[13px] font-medium text-gray-950">Notifikasi</span>
