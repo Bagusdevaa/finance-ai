@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useState, createContext, useContext, useCallback, useEffect, type ReactNode } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/cn";
 
 interface NavItem {
@@ -229,8 +230,118 @@ function UserPill({ collapsed }: { collapsed: boolean }) {
 	);
 }
 
-// Stateful wrapper buat dipakai di layout — manage collapsed state.
-export function SidebarShell() {
+// Context supaya Header bisa trigger mobile drawer open.
+interface SidebarContextValue {
+	mobileOpen: boolean;
+	setMobileOpen: (v: boolean) => void;
+}
+
+const SidebarContext = createContext<SidebarContextValue>({
+	mobileOpen: false,
+	setMobileOpen: () => {},
+});
+
+export function useSidebar() {
+	return useContext(SidebarContext);
+}
+
+const easeDrawer = [0.2, 0.7, 0.2, 1] as const;
+
+function MobileDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+	const pathname = usePathname();
+
+	useEffect(() => {
+		onClose();
+	}, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+
+	useEffect(() => {
+		if (open) {
+			document.body.style.overflow = "hidden";
+		} else {
+			document.body.style.overflow = "";
+		}
+		return () => { document.body.style.overflow = ""; };
+	}, [open]);
+
+	return (
+		<>
+			<AnimatePresence>
+				{open && (
+					<motion.div
+						key="backdrop"
+						initial={{ opacity: 0 }}
+						animate={{ opacity: 1 }}
+						exit={{ opacity: 0 }}
+						transition={{ duration: 0.25, ease: easeDrawer }}
+						onClick={onClose}
+						className="fixed inset-0 z-40 bg-gray-950/40 md:hidden"
+					/>
+				)}
+			</AnimatePresence>
+			<motion.aside
+				initial={false}
+				animate={{ x: open ? 0 : "-100%" }}
+				transition={{ duration: 0.35, ease: easeDrawer }}
+				className="fixed left-0 top-0 z-50 flex h-screen w-[280px] max-w-[85vw] flex-col border-r border-gray-200 bg-white shadow-[20px_0_60px_-20px_rgba(0,0,0,0.2)] md:hidden"
+			>
+				<div className="flex h-16 items-center justify-between border-b border-gray-200 px-5">
+					<Link href="/dashboard" className="inline-flex items-center gap-2 whitespace-nowrap font-serif text-[20px] leading-none text-gray-950">
+						<span aria-hidden className="relative inline-block h-5 w-5 flex-none rounded-full bg-gray-950 after:absolute after:inset-[5px] after:rounded-full after:bg-white after:content-['']" />
+						FinanceAI
+					</Link>
+					<button
+						type="button"
+						onClick={onClose}
+						aria-label="Tutup menu"
+						className="grid h-7 w-7 place-items-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-950"
+					>
+						<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+							<path d="M6 6l12 12M18 6l-12 12" />
+						</svg>
+					</button>
+				</div>
+
+				<nav className="flex flex-1 flex-col gap-0.5 px-3 py-3.5">
+					<div className="px-3 py-1.5 pt-2.5 font-mono text-[10px] font-medium uppercase tracking-labelWide text-gray-400">
+						Menu
+					</div>
+					{navItems.map((item) => {
+						const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+						return (
+							<SidebarLink key={item.href} item={item} active={active} collapsed={false} />
+						);
+					})}
+				</nav>
+
+				<div className="flex flex-col gap-1.5 border-t border-gray-200 px-3 py-3.5">
+					<SidebarLink
+						item={{ href: "/settings", label: "Pengaturan", icon: SettingsIcon }}
+						active={pathname.startsWith("/settings")}
+						collapsed={false}
+						noBorder
+					/>
+					<UserPill collapsed={false} />
+				</div>
+			</motion.aside>
+		</>
+	);
+}
+
+// Stateful wrapper buat dipakai di layout — manage collapsed state + mobile drawer.
+export function SidebarShell({ children }: { children: ReactNode }) {
 	const [collapsed, setCollapsed] = useState(false);
-	return <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />;
+	const [mobileOpen, setMobileOpen] = useState(false);
+	const closeMobile = useCallback(() => setMobileOpen(false), []);
+
+	return (
+		<SidebarContext.Provider value={{ mobileOpen, setMobileOpen }}>
+			{/* Desktop sidebar */}
+			<div className="hidden md:block">
+				<Sidebar collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
+			</div>
+			{/* Mobile drawer */}
+			<MobileDrawer open={mobileOpen} onClose={closeMobile} />
+			{children}
+		</SidebarContext.Provider>
+	);
 }

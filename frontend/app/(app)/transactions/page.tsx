@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Header } from "@/components/layout/Header";
-import { dummyTransactions, type DummyTransactionFull } from "@/lib/dummy-data";
+import { dummyTransactions as initialTransactions, type DummyTransactionFull } from "@/lib/dummy-data";
 import { formatRupiah } from "@/lib/formatRupiah";
 import { cn } from "@/lib/cn";
 
@@ -15,6 +15,7 @@ const CATEGORIES = ["Semua kategori", "Pemasukan", "Makan & Minum", "Belanja", "
 const ACCOUNTS = ["Semua akun", "BCA", "Mandiri", "GoPay", "OVO", "Stockbit", "Bibit"];
 
 export default function TransactionsPage() {
+	const [transactions, setTransactions] = useState<DummyTransactionFull[]>(initialTransactions);
 	const [search, setSearch] = useState("");
 	const [type, setType] = useState<TypeFilter>("all");
 	const [category, setCategory] = useState(CATEGORIES[0]);
@@ -22,10 +23,12 @@ export default function TransactionsPage() {
 	const [openCat, setOpenCat] = useState(false);
 	const [openAcc, setOpenAcc] = useState(false);
 	const [selected, setSelected] = useState<DummyTransactionFull | null>(null);
+	const [showFilters, setShowFilters] = useState(true);
+	const [showAddModal, setShowAddModal] = useState(false);
 
 	const filtered = useMemo(() => {
 		const q = search.toLowerCase();
-		return dummyTransactions.filter((t) => {
+		return transactions.filter((t) => {
 			if (q && !`${t.merchant_name} ${t.description}`.toLowerCase().includes(q)) return false;
 			if (type === "in" && t.amount < 0) return false;
 			if (type === "out" && t.amount > 0) return false;
@@ -33,7 +36,29 @@ export default function TransactionsPage() {
 			if (account !== ACCOUNTS[0] && !t.account.startsWith(account)) return false;
 			return true;
 		});
-	}, [search, type, category, account]);
+	}, [search, type, category, account, transactions]);
+
+	const handleExport = () => {
+		const header = "Date,Merchant,Category,Account,Amount,Description";
+		const rows = filtered.map((t) => {
+			const escapeCsv = (s: string) => `"${s.replace(/"/g, '""')}"`;
+			return [t.date, escapeCsv(t.merchant_name), escapeCsv(t.category), escapeCsv(t.account), t.amount, escapeCsv(t.description)].join(",");
+		});
+		const csv = [header, ...rows].join("\n");
+		const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement("a");
+		const today = new Date().toISOString().slice(0, 10);
+		a.href = url;
+		a.download = `transaksi-export-${today}.csv`;
+		a.click();
+		URL.revokeObjectURL(url);
+	};
+
+	const handleAddTransaction = (tx: DummyTransactionFull) => {
+		setTransactions((prev) => [tx, ...prev]);
+		setShowAddModal(false);
+	};
 
 	return (
 		<>
@@ -41,7 +66,7 @@ export default function TransactionsPage() {
 				title="Transaksi"
 				actions={
 					<>
-						<HeaderGhostBtn>
+						<HeaderGhostBtn onClick={handleExport}>
 							<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
 								<path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
 								<polyline points="7 10 12 15 17 10" />
@@ -49,7 +74,7 @@ export default function TransactionsPage() {
 							</svg>
 							Export
 						</HeaderGhostBtn>
-						<HeaderGhostBtn>
+						<HeaderGhostBtn onClick={() => setShowFilters((v) => !v)}>
 							<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
 								<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
 							</svg>
@@ -59,8 +84,17 @@ export default function TransactionsPage() {
 				}
 			/>
 
-			<div className="px-8 pb-24 pt-6">
+			<div className="px-4 pb-24 pt-6 md:px-8">
 				{/* FILTER BAR */}
+				<AnimatePresence initial={false}>
+				{showFilters && (
+				<motion.div
+					initial={{ opacity: 0, height: 0 }}
+					animate={{ opacity: 1, height: "auto" }}
+					exit={{ opacity: 0, height: 0 }}
+					transition={{ duration: 0.25, ease: easeDesignhub }}
+					className="overflow-hidden"
+				>
 				<div className="flex flex-wrap items-center gap-2.5 border-b border-gray-200 pb-4">
 					<div className="relative min-w-[240px] max-w-[380px] flex-1">
 						<svg viewBox="0 0 24 24" className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -111,9 +145,12 @@ export default function TransactionsPage() {
 					</button>
 					<TypeSegment value={type} onChange={setType} />
 					<div className="ml-auto font-mono text-xs text-gray-400">
-						{search ? `${filtered.length} ditemukan` : `${dummyTransactions.length} transaksi`}
+						{search ? `${filtered.length} ditemukan` : `${transactions.length} transaksi`}
 					</div>
 				</div>
+				</motion.div>
+				)}
+				</AnimatePresence>
 
 				{/* TABLE */}
 				<div className="overflow-x-auto">
@@ -146,7 +183,7 @@ export default function TransactionsPage() {
 				<div className="flex flex-wrap items-center justify-between gap-2.5 py-5 font-mono text-xs text-gray-500">
 					<div>
 						Menampilkan <strong className="text-gray-950">1–{filtered.length}</strong> dari{" "}
-						<strong className="text-gray-950">{dummyTransactions.length}</strong> transaksi
+						<strong className="text-gray-950">{transactions.length}</strong> transaksi
 					</div>
 					<div className="flex items-center gap-1.5">
 						<PgBtn disabled>
@@ -171,7 +208,8 @@ export default function TransactionsPage() {
 			{/* FAB */}
 			<button
 				type="button"
-				className="fixed bottom-8 right-8 z-[6] inline-flex h-12 items-center gap-2 rounded-full bg-gray-950 px-5 text-[13px] font-medium text-white shadow-[0_14px_30px_-10px_rgba(0,0,0,0.35)] transition-[transform,background-color] duration-200 ease-designhub hover:-translate-y-0.5 hover:bg-black"
+				onClick={() => setShowAddModal(true)}
+				className="fixed bottom-6 right-4 z-[6] inline-flex h-12 items-center gap-2 rounded-full bg-gray-950 px-5 text-[13px] font-medium text-white shadow-[0_14px_30px_-10px_rgba(0,0,0,0.35)] transition-[transform,background-color] duration-200 ease-designhub hover:-translate-y-0.5 hover:bg-black md:bottom-8 md:right-8"
 			>
 				<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
 					<path d="M12 5v14" />
@@ -182,6 +220,13 @@ export default function TransactionsPage() {
 
 			{/* SIDE PANEL */}
 			<TxSidePanel tx={selected} onClose={() => setSelected(null)} />
+
+			{/* ADD TRANSACTION MODAL */}
+			<AddTransactionModal
+				open={showAddModal}
+				onClose={() => setShowAddModal(false)}
+				onAdd={handleAddTransaction}
+			/>
 		</>
 	);
 }
@@ -190,10 +235,11 @@ export default function TransactionsPage() {
 // Helpers
 // =============================================================================
 
-function HeaderGhostBtn({ children }: { children: React.ReactNode }) {
+function HeaderGhostBtn({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) {
 	return (
 		<button
 			type="button"
+			onClick={onClick}
 			className="inline-flex h-9 items-center gap-2 rounded-lg border border-gray-300 bg-white px-3.5 text-[13px] font-medium text-gray-700 transition-[background-color,border-color,color] duration-200 ease-designhub hover:border-gray-950 hover:bg-gray-50 hover:text-gray-950"
 		>
 			{children}
@@ -513,6 +559,211 @@ function PRow({
 		>
 			<span className="text-gray-500">{label}</span>
 			<span className={cn("font-medium text-gray-950", mono && "font-mono tabular-nums")}>{value}</span>
+		</div>
+	);
+}
+
+// =============================================================================
+// Add Transaction Modal
+// =============================================================================
+
+const ADD_CATEGORIES = CATEGORIES.filter((c) => c !== "Semua kategori");
+const ADD_ACCOUNTS = ACCOUNTS.filter((a) => a !== "Semua akun");
+
+function AddTransactionModal({
+	open,
+	onClose,
+	onAdd,
+}: {
+	open: boolean;
+	onClose: () => void;
+	onAdd: (tx: DummyTransactionFull) => void;
+}) {
+	const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+	const [merchant, setMerchant] = useState("");
+	const [amountStr, setAmountStr] = useState("");
+	const [isExpense, setIsExpense] = useState(true);
+	const [cat, setCat] = useState(ADD_CATEGORIES[0]);
+	const [acc, setAcc] = useState(ADD_ACCOUNTS[0]);
+	const [desc, setDesc] = useState("");
+
+	useEffect(() => {
+		if (open) {
+			setDate(new Date().toISOString().slice(0, 10));
+			setMerchant("");
+			setAmountStr("");
+			setIsExpense(true);
+			setCat(ADD_CATEGORIES[0]);
+			setAcc(ADD_ACCOUNTS[0]);
+			setDesc("");
+		}
+	}, [open]);
+
+	useEffect(() => {
+		if (!open) return;
+		const handler = (e: globalThis.KeyboardEvent) => {
+			if (e.key === "Escape") onClose();
+		};
+		document.addEventListener("keydown", handler);
+		return () => document.removeEventListener("keydown", handler);
+	}, [open, onClose]);
+
+	const handleSubmit = () => {
+		const rawAmount = parseFloat(amountStr.replace(/\./g, "").replace(",", "."));
+		if (!merchant.trim() || isNaN(rawAmount) || rawAmount <= 0) return;
+		const amount = isExpense ? -rawAmount : rawAmount;
+		const tx: DummyTransactionFull = {
+			id: `txn-manual-${Date.now()}`,
+			date,
+			description: desc || merchant,
+			merchant_name: merchant,
+			account: acc,
+			category: cat,
+			amount,
+			confidence_score: 1.0,
+		};
+		onAdd(tx);
+	};
+
+	return (
+		<AnimatePresence>
+			{open && (
+				<motion.div
+					className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+					initial={{ opacity: 0 }}
+					animate={{ opacity: 1 }}
+					exit={{ opacity: 0 }}
+					transition={{ duration: 0.2 }}
+					onClick={onClose}
+				>
+					<motion.div
+						className="w-full max-w-[480px] border border-gray-200 bg-white shadow-[0_24px_60px_-16px_rgba(0,0,0,0.25)]"
+						initial={{ opacity: 0, scale: 0.95, y: 8 }}
+						animate={{ opacity: 1, scale: 1, y: 0 }}
+						exit={{ opacity: 0, scale: 0.95, y: 8 }}
+						transition={{ duration: 0.25, ease: easeDesignhub }}
+						onClick={(e) => e.stopPropagation()}
+					>
+						<div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+							<h2 className="text-[15px] font-medium text-gray-950">Tambah Transaksi</h2>
+							<button
+								type="button"
+								onClick={onClose}
+								className="grid h-7 w-7 place-items-center rounded text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-950"
+							>
+								<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+									<path d="M6 6l12 12M18 6l-12 12" />
+								</svg>
+							</button>
+						</div>
+						<div className="flex flex-col gap-4 px-6 py-5">
+							<ModalField label="Tanggal">
+								<input
+									type="date"
+									value={date}
+									onChange={(e) => setDate(e.target.value)}
+									className="h-9 w-full border border-gray-200 bg-gray-50 px-3 font-mono text-[13px] text-gray-950 outline-none transition-colors focus:border-gray-950 focus:bg-white"
+								/>
+							</ModalField>
+							<ModalField label="Merchant">
+								<input
+									type="text"
+									value={merchant}
+									onChange={(e) => setMerchant(e.target.value)}
+									placeholder="Nama merchant..."
+									className="h-9 w-full border border-gray-200 bg-gray-50 px-3 text-[13px] text-gray-950 outline-none transition-colors placeholder:text-gray-400 focus:border-gray-950 focus:bg-white"
+									autoFocus
+								/>
+							</ModalField>
+							<ModalField label="Jumlah">
+								<div className="flex gap-2">
+									<button
+										type="button"
+										onClick={() => setIsExpense((v) => !v)}
+										className={cn(
+											"grid h-9 w-9 shrink-0 place-items-center border text-sm font-medium transition-colors",
+											isExpense
+												? "border-gray-950 bg-gray-950 text-white"
+												: "border-gray-200 bg-gray-50 text-gray-950",
+										)}
+									>
+										{isExpense ? "−" : "+"}
+									</button>
+									<div className="relative flex-1">
+										<span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-gray-500">Rp</span>
+										<input
+											type="text"
+											value={amountStr}
+											onChange={(e) => setAmountStr(e.target.value)}
+											placeholder="0"
+											className="h-9 w-full border border-gray-200 bg-gray-50 pl-9 pr-3 font-mono text-[13px] text-gray-950 outline-none transition-colors placeholder:text-gray-400 focus:border-gray-950 focus:bg-white"
+										/>
+									</div>
+								</div>
+							</ModalField>
+							<div className="grid grid-cols-2 gap-3">
+								<ModalField label="Kategori">
+									<select
+										value={cat}
+										onChange={(e) => setCat(e.target.value)}
+										className="h-9 w-full border border-gray-200 bg-gray-50 px-2 text-[13px] text-gray-950 outline-none transition-colors focus:border-gray-950 focus:bg-white"
+									>
+										{ADD_CATEGORIES.map((c) => (
+											<option key={c} value={c}>{c}</option>
+										))}
+									</select>
+								</ModalField>
+								<ModalField label="Akun">
+									<select
+										value={acc}
+										onChange={(e) => setAcc(e.target.value)}
+										className="h-9 w-full border border-gray-200 bg-gray-50 px-2 text-[13px] text-gray-950 outline-none transition-colors focus:border-gray-950 focus:bg-white"
+									>
+										{ADD_ACCOUNTS.map((a) => (
+											<option key={a} value={a}>{a}</option>
+										))}
+									</select>
+								</ModalField>
+							</div>
+							<ModalField label="Deskripsi (opsional)">
+								<input
+									type="text"
+									value={desc}
+									onChange={(e) => setDesc(e.target.value)}
+									placeholder="Catatan singkat..."
+									className="h-9 w-full border border-gray-200 bg-gray-50 px-3 text-[13px] text-gray-950 outline-none transition-colors placeholder:text-gray-400 focus:border-gray-950 focus:bg-white"
+								/>
+							</ModalField>
+						</div>
+						<div className="flex gap-2 border-t border-gray-200 px-6 py-4">
+							<button
+								type="button"
+								onClick={onClose}
+								className="flex-1 rounded-lg border border-gray-300 px-3.5 py-2.5 text-[13px] font-medium text-gray-700 transition-colors hover:border-gray-950 hover:text-gray-950"
+							>
+								Batal
+							</button>
+							<button
+								type="button"
+								onClick={handleSubmit}
+								disabled={!merchant.trim() || !amountStr.trim()}
+								className="flex-1 rounded-lg bg-gray-950 px-3.5 py-2.5 text-[13px] font-medium text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-40"
+							>
+								Simpan
+							</button>
+						</div>
+					</motion.div>
+				</motion.div>
+			)}
+		</AnimatePresence>
+	);
+}
+
+function ModalField({ label, children }: { label: string; children: React.ReactNode }) {
+	return (
+		<div className="flex flex-col gap-1.5">
+			<label className="text-[11px] font-medium uppercase tracking-label text-gray-500">{label}</label>
+			{children}
 		</div>
 	);
 }

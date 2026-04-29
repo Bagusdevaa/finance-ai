@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useSidebar } from "@/components/layout/Sidebar";
 import { cn } from "@/lib/cn";
 
 const easeDesignhub = [0.2, 0.7, 0.2, 1] as const;
@@ -123,6 +124,24 @@ const CONNECTED_ACCOUNTS = [
 	{ logo: "b", name: "Bibit", sub: "CSV · Sinkron 2 hari lalu", active: true },
 ];
 
+function SettingsMobileMenuButton() {
+	const { setMobileOpen } = useSidebar();
+	return (
+		<button
+			type="button"
+			onClick={() => setMobileOpen(true)}
+			aria-label="Buka menu"
+			className="mr-2 grid h-9 w-9 place-items-center rounded-lg text-gray-600 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-950 md:hidden"
+		>
+			<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+				<line x1="3" y1="6" x2="21" y2="6" />
+				<line x1="3" y1="12" x2="21" y2="12" />
+				<line x1="3" y1="18" x2="21" y2="18" />
+			</svg>
+		</button>
+	);
+}
+
 export default function SettingsPage() {
 	const [activeSection, setActiveSection] = useState<SectionId>("profil");
 	const [theme, setTheme] = useState("light");
@@ -188,8 +207,11 @@ export default function SettingsPage() {
 	return (
 		<>
 			{/* Header */}
-			<header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-gray-200 bg-white/85 px-8 backdrop-blur-[14px]">
-				<h1 className="m-0 font-serif text-[24px] font-normal tracking-tight2 text-gray-950">Pengaturan</h1>
+			<header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-gray-200 bg-white/85 px-4 backdrop-blur-[14px] md:px-8">
+				<div className="flex items-center">
+					<SettingsMobileMenuButton />
+					<h1 className="m-0 font-serif text-[24px] font-normal tracking-tight2 text-gray-950">Pengaturan</h1>
+				</div>
 			</header>
 
 			<div className="grid flex-1 grid-cols-[240px_1fr] max-[1100px]:grid-cols-[200px_1fr] max-[880px]:grid-cols-[1fr]">
@@ -199,7 +221,7 @@ export default function SettingsPage() {
 				</aside>
 
 				{/* Content pane */}
-				<section className="max-w-[780px] overflow-y-auto px-10 py-8 pb-[60px] max-[1100px]:px-6 max-[1100px]:py-6">
+				<section className="max-w-[780px] overflow-y-auto px-4 py-6 pb-[60px] md:px-10 md:py-8 max-[1100px]:px-6 max-[1100px]:py-6">
 					<AnimatePresence mode="wait">
 						{/* Profil */}
 						{activeSection === "profil" && (

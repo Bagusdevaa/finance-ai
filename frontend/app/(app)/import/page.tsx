@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useSidebar } from "@/components/layout/Sidebar";
 import { cn } from "@/lib/cn";
 
 const easeDesignhub = [0.2, 0.7, 0.2, 1] as const;
@@ -121,6 +122,24 @@ const fadeVariants = {
 	show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: easeDesignhub } },
 	exit: { opacity: 0, transition: { duration: 0.15 } },
 };
+
+function MobileMenuButton() {
+	const { setMobileOpen } = useSidebar();
+	return (
+		<button
+			type="button"
+			onClick={() => setMobileOpen(true)}
+			aria-label="Buka menu"
+			className="mr-2 grid h-9 w-9 place-items-center rounded-lg text-gray-600 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-950 md:hidden"
+		>
+			<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+				<line x1="3" y1="6" x2="21" y2="6" />
+				<line x1="3" y1="12" x2="21" y2="12" />
+				<line x1="3" y1="18" x2="21" y2="18" />
+			</svg>
+		</button>
+	);
+}
 
 export default function ImportPage() {
 	const [activeSource, setActiveSource] = useState("bca");
@@ -246,10 +265,13 @@ export default function ImportPage() {
 	return (
 		<>
 			{/* Header */}
-			<header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-gray-200 bg-white/85 px-8 backdrop-blur-[14px]">
-				<h1 className="m-0 font-serif text-[24px] font-normal tracking-tight2 text-gray-950">
-					Import <em className="italic text-gray-700">Data</em>
-				</h1>
+			<header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-gray-200 bg-white/85 px-4 backdrop-blur-[14px] md:px-8">
+				<div className="flex items-center">
+					<MobileMenuButton />
+					<h1 className="m-0 font-serif text-[24px] font-normal tracking-tight2 text-gray-950">
+						Import <em className="italic text-gray-700">Data</em>
+					</h1>
+				</div>
 				<button
 					type="button"
 					className="inline-flex h-[34px] items-center gap-2 rounded-lg border border-gray-300 px-3.5 text-[13px] text-gray-700 transition-[background-color,border-color,color] duration-200 hover:border-gray-950 hover:bg-gray-50 hover:text-gray-950"
@@ -329,7 +351,7 @@ export default function ImportPage() {
 				{/* Right pane */}
 				<section className="min-w-0 overflow-x-hidden">
 					{/* Stepper */}
-					<div className="flex flex-wrap items-center gap-2 px-8 pt-6 max-[880px]:px-5">
+					<div className="flex flex-wrap items-center gap-2 px-4 pt-6 md:px-8 max-[880px]:px-5">
 						{STEPS.map((label, i) => {
 							const stepNum = i + 1;
 							const isDone = stepNum < currentStep;
@@ -360,7 +382,7 @@ export default function ImportPage() {
 						})}
 					</div>
 
-					<div className="max-w-[1100px] p-8 max-[880px]:p-5">
+					<div className="max-w-[1100px] p-4 md:p-8 max-[880px]:p-5">
 						<AnimatePresence mode="wait">
 							{/* Step 1: Upload */}
 							{currentStep === 1 && (

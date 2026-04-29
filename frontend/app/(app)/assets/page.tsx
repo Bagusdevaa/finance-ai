@@ -68,7 +68,7 @@ export default function AssetsPage() {
 			<TabNav tabs={CAT_TABS} activeId={cat} onChange={(id) => setCat(id as CatId)} />
 
 			<motion.div
-				className="flex flex-col gap-8 px-8 py-8"
+				className="flex flex-col gap-8 px-4 py-8 md:px-8"
 				variants={containerVariants}
 				initial="hidden"
 				animate="show"
@@ -125,7 +125,7 @@ function NetWorthHero() {
 	return (
 		<section
 			ref={ref as React.RefObject<HTMLElement>}
-			className="grid grid-cols-1 items-center gap-10 border-b border-gray-200 bg-black px-8 py-12 text-white lg:grid-cols-[1fr_auto]"
+			className="grid grid-cols-1 items-center gap-10 border-b border-gray-200 bg-black px-4 py-8 text-white md:px-8 md:py-12 lg:grid-cols-[1fr_auto]"
 		>
 			<div>
 				<div className="inline-flex items-center gap-2.5 text-[11px] font-medium uppercase tracking-labelExtra text-gray-500">

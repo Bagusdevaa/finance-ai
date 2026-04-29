@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, type KeyboardEvent } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import { useSidebar } from "@/components/layout/Sidebar";
 import { cn } from "@/lib/cn";
 
 const easeDesignhub = [0.2, 0.7, 0.2, 1] as const;
@@ -102,10 +104,31 @@ const promptVariants = {
 	}),
 };
 
+function ChatMobileMenuButton() {
+	const { setMobileOpen } = useSidebar();
+	return (
+		<button
+			type="button"
+			onClick={() => setMobileOpen(true)}
+			aria-label="Buka menu"
+			className="mr-1 grid h-9 w-9 place-items-center rounded-lg text-gray-600 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-950 md:hidden"
+		>
+			<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+				<line x1="3" y1="6" x2="21" y2="6" />
+				<line x1="3" y1="12" x2="21" y2="12" />
+				<line x1="3" y1="18" x2="21" y2="18" />
+			</svg>
+		</button>
+	);
+}
+
 export default function ChatPage() {
+	const router = useRouter();
 	const [messages, setMessages] = useState<Message[]>([]);
 	const [inputValue, setInputValue] = useState("");
 	const [isTyping, setIsTyping] = useState(false);
+	const [showToast, setShowToast] = useState(false);
+	const [showMobileHistory, setShowMobileHistory] = useState(false);
 	const [dataSources, setDataSources] = useState<DataSource[]>([
 		{ id: "bca", name: "BCA Mutasi Feb 2026", sub: "127 transaksi · diperbarui 2 jam lalu", active: true },
 		{ id: "stockbit", name: "Stockbit Portfolio", sub: "5 saham · Rp 52,1 jt", active: true },
@@ -189,6 +212,20 @@ export default function ChatPage() {
 		setInputValue("");
 	};
 
+	const handleShare = () => {
+		const text = messages
+			.map((m) => {
+				const prefix = m.role === "user" ? "Kamu" : "AI";
+				const plain = m.content.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&mdash;/g, "—");
+				return `[${m.time}] ${prefix}: ${plain}`;
+			})
+			.join("\n\n");
+		navigator.clipboard.writeText(text).then(() => {
+			setShowToast(true);
+			setTimeout(() => setShowToast(false), 2000);
+		});
+	};
+
 	const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
 		if (e.key === "Enter" && !e.shiftKey) {
 			e.preventDefault();
@@ -243,12 +280,13 @@ export default function ChatPage() {
 
 			<div className="grid h-[calc(100vh)] grid-rows-[64px_1fr] max-[1100px]:grid-cols-[1fr] grid-cols-[1fr_340px]">
 				{/* Header */}
-				<header className="col-span-full flex h-16 items-center justify-between border-b border-gray-200 bg-white/85 px-7 backdrop-blur-[14px]" style={{ zIndex: 10 }}>
-					<div className="flex min-w-0 items-baseline gap-3.5">
+				<header className="col-span-full flex h-16 items-center justify-between border-b border-gray-200 bg-white/85 px-4 backdrop-blur-[14px] md:px-7" style={{ zIndex: 10 }}>
+					<div className="flex min-w-0 items-center gap-3.5">
+						<ChatMobileMenuButton />
 						<h1 className="m-0 font-serif text-[22px] font-normal tracking-tight2 text-gray-950">
 							Financial <em className="italic text-gray-700">Advisor AI</em>
 						</h1>
-						<span className="inline-flex items-center gap-2 font-mono text-xs text-gray-400">
+						<span className="hidden items-center gap-2 font-mono text-xs text-gray-400 sm:inline-flex">
 							<span className="inline-block h-1.5 w-1.5 rounded-full bg-[#16a34a] animate-[pulse_2s_cubic-bezier(0.2,0.7,0.2,1)_infinite]" />
 							Data per 17 Feb 2026
 						</span>
@@ -256,6 +294,7 @@ export default function ChatPage() {
 					<div className="flex items-center gap-2">
 						<button
 							type="button"
+							onClick={handleShare}
 							className="grid h-[34px] w-[34px] place-items-center rounded-lg border border-transparent text-gray-500 transition-[background-color,color,border-color] duration-200 hover:border-gray-200 hover:bg-gray-50 hover:text-gray-950"
 							title="Bagikan"
 						>
@@ -263,7 +302,11 @@ export default function ChatPage() {
 						</button>
 						<button
 							type="button"
-							className="grid h-[34px] w-[34px] place-items-center rounded-lg border border-transparent text-gray-500 transition-[background-color,color,border-color] duration-200 hover:border-gray-200 hover:bg-gray-50 hover:text-gray-950"
+							onClick={() => setShowMobileHistory((v) => !v)}
+							className={cn(
+								"grid h-[34px] w-[34px] place-items-center rounded-lg border text-gray-500 transition-[background-color,color,border-color] duration-200 hover:border-gray-200 hover:bg-gray-50 hover:text-gray-950 min-[1100px]:border-transparent",
+								showMobileHistory ? "border-gray-300 bg-gray-50 text-gray-950" : "border-transparent",
+							)}
 							title="Riwayat"
 						>
 							<svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
@@ -281,7 +324,7 @@ export default function ChatPage() {
 
 				{/* Chat area */}
 				<section className="flex min-h-0 min-w-0 flex-col bg-white">
-					<div className="flex-1 overflow-y-auto scroll-smooth px-8 py-8 max-[880px]:px-5">
+					<div className="flex-1 overflow-y-auto scroll-smooth px-4 py-8 md:px-8 max-[880px]:px-5">
 						<div className="mx-auto flex max-w-[760px] flex-col gap-6">
 							<AnimatePresence mode="wait">
 								{messages.length === 0 && !isTyping ? (
@@ -445,6 +488,7 @@ export default function ChatPage() {
 							))}
 							<button
 								type="button"
+								onClick={() => router.push("/import")}
 								className="mt-1 flex w-full items-center gap-2 border border-dashed border-gray-300 bg-transparent px-3 py-2 text-xs text-gray-500 transition-[border-color,color] duration-200 hover:border-gray-700 hover:text-gray-950"
 							>
 								<svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14" /><path d="M5 12h14" /></svg>
@@ -505,6 +549,75 @@ export default function ChatPage() {
 					</div>
 				</aside>
 			</div>
+
+			{/* Mobile history drawer */}
+			<AnimatePresence>
+				{showMobileHistory && (
+					<>
+						<motion.div
+							className="fixed inset-0 z-40 bg-black/40 min-[1100px]:hidden"
+							initial={{ opacity: 0 }}
+							animate={{ opacity: 1 }}
+							exit={{ opacity: 0 }}
+							transition={{ duration: 0.2 }}
+							onClick={() => setShowMobileHistory(false)}
+						/>
+						<motion.div
+							className="fixed right-0 top-0 z-50 flex h-full w-[320px] max-w-[85vw] flex-col border-l border-gray-200 bg-white shadow-[-12px_0_40px_-10px_rgba(0,0,0,0.15)] min-[1100px]:hidden"
+							initial={{ x: "100%" }}
+							animate={{ x: 0 }}
+							exit={{ x: "100%" }}
+							transition={{ duration: 0.3, ease: easeDesignhub }}
+						>
+							<div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+								<h3 className="text-[13px] font-medium text-gray-950">Riwayat Chat</h3>
+								<button
+									type="button"
+									onClick={() => setShowMobileHistory(false)}
+									className="grid h-7 w-7 place-items-center rounded text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-950"
+								>
+									<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+										<path d="M6 6l12 12M18 6l-12 12" />
+									</svg>
+								</button>
+							</div>
+							<div className="flex-1 overflow-y-auto px-5 py-4">
+								{HISTORY.map((h) => (
+									<button
+										key={h.title}
+										type="button"
+										onClick={() => setShowMobileHistory(false)}
+										className="flex w-full items-start gap-2.5 border-b border-gray-200 px-0 py-3 text-left text-[12.5px] text-gray-700 last:border-b-0"
+									>
+										<span className="mt-0.5 shrink-0 text-gray-400">
+											<svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.5 8.5 0 1 1-3.4-6.8L21 4l-1 3.5A8.5 8.5 0 0 1 21 11.5z" /></svg>
+										</span>
+										<span className="min-w-0 flex-1">
+											<span className="block truncate font-medium text-gray-800">{h.title}</span>
+											<span className="mt-0.5 block font-mono text-[10.5px] text-gray-400">{h.when}</span>
+										</span>
+									</button>
+								))}
+							</div>
+						</motion.div>
+					</>
+				)}
+			</AnimatePresence>
+
+			{/* Toast */}
+			<AnimatePresence>
+				{showToast && (
+					<motion.div
+						className="fixed bottom-8 left-1/2 z-[60] -translate-x-1/2 rounded-lg border border-gray-200 bg-white px-5 py-3 text-[13px] font-medium text-gray-950 shadow-[0_8px_24px_-8px_rgba(0,0,0,0.15)]"
+						initial={{ opacity: 0, y: 12 }}
+						animate={{ opacity: 1, y: 0 }}
+						exit={{ opacity: 0, y: 12 }}
+						transition={{ duration: 0.25, ease: easeDesignhub }}
+					>
+						Chat berhasil disalin!
+					</motion.div>
+				)}
+			</AnimatePresence>
 
 			<style jsx global>{`
 				@keyframes chatBounce {
