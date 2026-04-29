@@ -54,9 +54,9 @@ export default function AssetsPage() {
 		<>
 			<Header
 				title={
-					<>
+					<span className="truncate">
 						Aset & <em className="font-normal italic text-gray-700">Portofolio</em>
-					</>
+					</span>
 				}
 				actions={<ViewToggle value={view} onChange={setView} />}
 			/>

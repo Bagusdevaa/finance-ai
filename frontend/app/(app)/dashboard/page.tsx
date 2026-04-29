@@ -55,7 +55,7 @@ export default function DashboardPage() {
 						Selamat sore, <em className="font-normal italic text-gray-700">Bagus.</em>
 					</h1>
 				}
-				subtitle={<TodayDate />}
+				subtitle={<span className="hidden min-[375px]:inline"><TodayDate /></span>}
 				actions={
 					<>
 						<IconButton ariaLabel="Cari" onClick={() => setShowSearch(true)}>
@@ -71,7 +71,7 @@ export default function DashboardPage() {
 						</div>
 						<Link
 							href="/import"
-							className="inline-flex h-[38px] items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-[13px] font-medium text-gray-950 transition-[background-color,border-color] duration-200 ease-designhub hover:border-gray-950 hover:bg-gray-50"
+							className="inline-flex h-[34px] items-center gap-2 rounded-lg border border-gray-300 bg-white px-2.5 text-[13px] font-medium text-gray-950 transition-[background-color,border-color] duration-200 ease-designhub hover:border-gray-950 hover:bg-gray-50 min-[375px]:h-[38px] min-[375px]:px-4"
 						>
 							<UploadSvg />
 							<span className="hidden sm:inline">Import Data</span>

@@ -144,6 +144,7 @@ function MobileMenuButton() {
 export default function ImportPage() {
 	const [activeSource, setActiveSource] = useState("bca");
 	const [searchQuery, setSearchQuery] = useState("");
+	const [mobileShowContent, setMobileShowContent] = useState(false);
 	const [currentStep, setCurrentStep] = useState(1);
 	const [activePill, setActivePill] = useState("BCA");
 	const [dragOver, setDragOver] = useState(false);
@@ -231,6 +232,7 @@ export default function ImportPage() {
 
 	const handleSourceClick = (id: string) => {
 		setActiveSource(id);
+		setMobileShowContent(true);
 		goStep(1);
 	};
 
@@ -283,7 +285,10 @@ export default function ImportPage() {
 
 			<div className="grid flex-1 grid-cols-[260px_1fr] max-[1100px]:grid-cols-[220px_1fr] max-[880px]:grid-cols-[1fr]">
 				{/* Source selector */}
-				<aside className="sticky top-16 h-[calc(100vh-64px)] overflow-y-auto border-r border-gray-200 bg-white max-[880px]:static max-[880px]:h-auto max-[880px]:border-b max-[880px]:border-r-0">
+				<aside className={cn(
+					"sticky top-16 h-[calc(100vh-64px)] overflow-y-auto border-r border-gray-200 bg-white max-[880px]:static max-[880px]:h-auto max-[880px]:border-b max-[880px]:border-r-0",
+					mobileShowContent && "max-[880px]:hidden",
+				)}>
 					<div className="px-5 pb-1.5 pt-[18px]">
 						<h2 className="text-[11px] font-medium uppercase tracking-labelWide text-gray-500">Sumber Data</h2>
 					</div>
@@ -349,7 +354,16 @@ export default function ImportPage() {
 				</aside>
 
 				{/* Right pane */}
-				<section className="min-w-0 overflow-x-hidden">
+				<section className={cn("min-w-0 overflow-x-hidden", !mobileShowContent && "max-[880px]:hidden")}>
+					{/* Mobile back button */}
+					<button
+						type="button"
+						onClick={() => setMobileShowContent(false)}
+						className="hidden max-[880px]:flex items-center gap-2 px-4 pt-4 text-[13px] font-medium text-gray-700 hover:text-gray-950"
+					>
+						<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+						Pilih sumber lain
+					</button>
 					{/* Stepper */}
 					<div className="flex flex-wrap items-center gap-2 px-4 pt-6 md:px-8 max-[880px]:px-5">
 						{STEPS.map((label, i) => {

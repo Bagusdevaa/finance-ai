@@ -37,7 +37,7 @@ export function Header({ title, subtitle, greeting, actions, className }: Header
 	return (
 		<header
 			className={cn(
-				"sticky top-0 z-10 flex h-16 items-center justify-between gap-4 border-b border-gray-200 px-4 md:px-8",
+				"sticky top-0 z-10 flex h-16 items-center justify-between gap-2 border-b border-gray-200 px-3 min-[375px]:gap-3 min-[375px]:px-4 md:gap-4 md:px-8",
 				"bg-white/85 backdrop-blur-[14px] backdrop-saturate-[180%]",
 				className,
 			)}
@@ -46,7 +46,7 @@ export function Header({ title, subtitle, greeting, actions, className }: Header
 				<HamburgerButton />
 				<div className="flex min-w-0 flex-col gap-0.5">
 					{greeting ?? (
-						<h1 className="m-0 whitespace-nowrap font-serif text-[20px] font-normal leading-[1.1] tracking-tight2 text-gray-950 min-[375px]:text-[24px]">
+						<h1 className="m-0 truncate font-serif text-[20px] font-normal leading-[1.1] tracking-tight2 text-gray-950 min-[375px]:text-[24px]">
 							{title}
 						</h1>
 					)}
@@ -55,7 +55,7 @@ export function Header({ title, subtitle, greeting, actions, className }: Header
 					)}
 				</div>
 			</div>
-			{actions && <div className="flex items-center gap-2.5">{actions}</div>}
+			{actions && <div className="flex shrink-0 items-center gap-1.5 min-[375px]:gap-2 sm:gap-2.5">{actions}</div>}
 		</header>
 	);
 }
@@ -80,7 +80,7 @@ export function IconButton({
 			aria-label={ariaLabel}
 			onClick={onClick}
 			className={cn(
-				"relative grid h-[38px] w-[38px] place-items-center rounded-lg border border-gray-200 text-gray-600",
+				"relative grid h-[34px] w-[34px] place-items-center rounded-lg border border-gray-200 text-gray-600 min-[375px]:h-[38px] min-[375px]:w-[38px]",
 				"transition-[background-color,color,border-color] duration-200 ease-designhub",
 				"hover:border-gray-300 hover:bg-gray-50 hover:text-gray-950",
 				className,

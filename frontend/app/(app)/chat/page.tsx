@@ -252,7 +252,8 @@ export default function ChatPage() {
 	return (
 		<>
 			<style jsx global>{`
-				.ai-table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 12.5px; border: 1px solid #e8e8e8; }
+				.ai-msg-content { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+				.ai-table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 12.5px; border: 1px solid #e8e8e8; min-width: 340px; }
 				.ai-table th { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: #a3a3a3; font-weight: 500; padding: 8px 10px; text-align: left; background: #fafafa; border-bottom: 1px solid #e8e8e8; }
 				.ai-table th.num { text-align: right; }
 				.ai-table td { padding: 8px 10px; border-bottom: 1px solid #f4f4f4; }
@@ -379,7 +380,7 @@ export default function ChatPage() {
 														"max-w-[88%] break-words px-[18px] py-[14px] text-sm leading-relaxed",
 														msg.role === "user"
 															? "rounded-[14px_0_14px_14px] bg-gray-950 text-white [&_strong]:text-white"
-															: "rounded-[0_14px_14px_14px] border border-gray-200 bg-white text-gray-900 [&_strong]:text-gray-950 [&_strong]:font-semibold",
+															: "ai-msg-content rounded-[0_14px_14px_14px] border border-gray-200 bg-white text-gray-900 [&_strong]:text-gray-950 [&_strong]:font-semibold",
 													)}
 													dangerouslySetInnerHTML={{ __html: msg.role === "ai" ? msg.content : msg.content.replace(/\n/g, "<br/>") }}
 												/>

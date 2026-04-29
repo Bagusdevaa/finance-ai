@@ -72,13 +72,13 @@ export default function TransactionsPage() {
 								<polyline points="7 10 12 15 17 10" />
 								<line x1="12" y1="15" x2="12" y2="3" />
 							</svg>
-							Export
+							<span className="hidden min-[375px]:inline">Export</span>
 						</HeaderGhostBtn>
 						<HeaderGhostBtn onClick={() => setShowFilters((v) => !v)}>
 							<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
 								<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
 							</svg>
-							Filter
+							<span className="hidden min-[375px]:inline">Filter</span>
 						</HeaderGhostBtn>
 					</>
 				}
@@ -240,7 +240,7 @@ function HeaderGhostBtn({ children, onClick }: { children: React.ReactNode; onCl
 		<button
 			type="button"
 			onClick={onClick}
-			className="inline-flex h-9 items-center gap-2 rounded-lg border border-gray-300 bg-white px-3.5 text-[13px] font-medium text-gray-700 transition-[background-color,border-color,color] duration-200 ease-designhub hover:border-gray-950 hover:bg-gray-50 hover:text-gray-950"
+			className="inline-flex h-[34px] items-center gap-2 rounded-lg border border-gray-300 bg-white px-2.5 text-[13px] font-medium text-gray-700 transition-[background-color,border-color,color] duration-200 ease-designhub hover:border-gray-950 hover:bg-gray-50 hover:text-gray-950 min-[375px]:h-9 min-[375px]:px-3.5"
 		>
 			{children}
 		</button>
