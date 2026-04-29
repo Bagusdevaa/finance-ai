@@ -96,7 +96,7 @@ export default function TransactionsPage() {
 					className="overflow-hidden"
 				>
 				<div className="flex flex-wrap items-center gap-2.5 border-b border-gray-200 pb-4">
-					<div className="relative min-w-[240px] max-w-[380px] flex-1">
+					<div className="relative min-w-0 max-w-[380px] flex-1 basis-full min-[375px]:basis-auto min-[375px]:min-w-[200px] sm:min-w-[240px]">
 						<svg viewBox="0 0 24 24" className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
 							<circle cx="11" cy="11" r="8" />
 							<path d="M21 21l-4.35-4.35" />

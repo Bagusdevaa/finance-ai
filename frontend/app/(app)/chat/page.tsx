@@ -281,9 +281,9 @@ export default function ChatPage() {
 			<div className="grid h-[calc(100vh)] grid-rows-[64px_1fr] max-[1100px]:grid-cols-[1fr] grid-cols-[1fr_340px]">
 				{/* Header */}
 				<header className="col-span-full flex h-16 items-center justify-between border-b border-gray-200 bg-white/85 px-4 backdrop-blur-[14px] md:px-7" style={{ zIndex: 10 }}>
-					<div className="flex min-w-0 items-center gap-3.5">
+					<div className="flex min-w-0 items-center gap-2 sm:gap-3.5">
 						<ChatMobileMenuButton />
-						<h1 className="m-0 font-serif text-[22px] font-normal tracking-tight2 text-gray-950">
+						<h1 className="m-0 whitespace-nowrap font-serif text-[18px] font-normal tracking-tight2 text-gray-950 sm:text-[22px]">
 							Financial <em className="italic text-gray-700">Advisor AI</em>
 						</h1>
 						<span className="hidden items-center gap-2 font-mono text-xs text-gray-400 sm:inline-flex">
@@ -314,10 +314,10 @@ export default function ChatPage() {
 						<button
 							type="button"
 							onClick={handleNewChat}
-							className="inline-flex h-[34px] items-center gap-2 rounded-lg border border-gray-300 px-3.5 text-[13px] font-medium text-gray-700 transition-[background-color,border-color,color] duration-200 hover:border-gray-950 hover:bg-gray-50 hover:text-gray-950"
+							className="inline-flex h-[34px] shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border border-gray-300 px-2.5 text-[13px] font-medium text-gray-700 transition-[background-color,border-color,color] duration-200 hover:border-gray-950 hover:bg-gray-50 hover:text-gray-950 sm:px-3.5"
 						>
-							<svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14" /><path d="M5 12h14" /></svg>
-							Chat Baru
+							<svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14" /><path d="M5 12h14" /></svg>
+							<span className="hidden min-[375px]:inline">Chat Baru</span>
 						</button>
 					</div>
 				</header>

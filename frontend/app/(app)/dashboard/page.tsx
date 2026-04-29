@@ -51,7 +51,7 @@ export default function DashboardPage() {
 		<>
 			<Header
 				greeting={
-					<h1 className="m-0 font-serif text-[24px] font-normal leading-[1.1] tracking-tight2 text-gray-950">
+					<h1 className="m-0 whitespace-nowrap font-serif text-[20px] font-normal leading-[1.1] tracking-tight2 text-gray-950 min-[375px]:text-[24px]">
 						Selamat sore, <em className="font-normal italic text-gray-700">Bagus.</em>
 					</h1>
 				}

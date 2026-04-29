@@ -46,7 +46,7 @@ export function Header({ title, subtitle, greeting, actions, className }: Header
 				<HamburgerButton />
 				<div className="flex min-w-0 flex-col gap-0.5">
 					{greeting ?? (
-						<h1 className="m-0 font-serif text-[24px] font-normal leading-[1.1] tracking-tight2 text-gray-950">
+						<h1 className="m-0 whitespace-nowrap font-serif text-[20px] font-normal leading-[1.1] tracking-tight2 text-gray-950 min-[375px]:text-[24px]">
 							{title}
 						</h1>
 					)}

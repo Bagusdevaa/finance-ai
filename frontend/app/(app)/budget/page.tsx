@@ -71,24 +71,24 @@ export default function BudgetPage() {
 
 function MonthSelector({ idx, onChange }: { idx: number; onChange: (n: number) => void }) {
 	return (
-		<div className="flex items-center gap-2.5">
+		<div className="flex items-center gap-1.5 min-[375px]:gap-2.5">
 			<div className="inline-flex h-9 items-center overflow-hidden rounded-lg border border-gray-300 text-[13px] font-medium text-gray-950">
 				<button
 					type="button"
 					onClick={() => onChange(Math.max(0, idx - 1))}
-					className="h-full px-2.5 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-950"
+					className="h-full px-2 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-950 min-[375px]:px-2.5"
 				>
 					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
 						<polyline points="15 18 9 12 15 6" />
 					</svg>
 				</button>
-				<span className="grid h-full min-w-[130px] place-items-center border-x border-gray-300 px-3.5 font-mono text-xs uppercase tracking-[0.04em]">
+				<span className="grid h-full min-w-[90px] place-items-center border-x border-gray-300 px-2 font-mono text-[10px] uppercase tracking-[0.04em] min-[375px]:min-w-[130px] min-[375px]:px-3.5 min-[375px]:text-xs">
 					{MONTHS[idx]}
 				</span>
 				<button
 					type="button"
 					onClick={() => onChange(Math.min(MONTHS.length - 1, idx + 1))}
-					className="h-full px-2.5 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-950"
+					className="h-full px-2 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-950 min-[375px]:px-2.5"
 				>
 					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
 						<polyline points="9 18 15 12 9 6" />
@@ -98,7 +98,7 @@ function MonthSelector({ idx, onChange }: { idx: number; onChange: (n: number) =
 			<button
 				type="button"
 				onClick={() => onChange(1)}
-				className="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-3.5 text-[13px] font-medium text-gray-700 transition-[border-color,color] duration-200 ease-designhub hover:border-gray-950 hover:bg-gray-50 hover:text-gray-950"
+				className="inline-flex h-9 shrink-0 items-center whitespace-nowrap rounded-lg border border-gray-300 bg-white px-2.5 text-[11px] font-medium text-gray-700 transition-[border-color,color] duration-200 ease-designhub hover:border-gray-950 hover:bg-gray-50 hover:text-gray-950 min-[375px]:px-3.5 min-[375px]:text-[13px]"
 			>
 				Reset Bulan
 			</button>

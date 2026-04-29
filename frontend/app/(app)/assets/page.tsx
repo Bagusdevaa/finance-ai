@@ -90,7 +90,7 @@ export default function AssetsPage() {
 
 function ViewToggle({ value, onChange }: { value: ViewMode; onChange: (v: ViewMode) => void }) {
 	return (
-		<div className="inline-flex overflow-hidden rounded-lg border border-gray-300 text-[13px] font-medium">
+		<div className="inline-flex shrink-0 overflow-hidden rounded-lg border border-gray-300 text-[11px] font-medium min-[375px]:text-[13px]">
 			{(["aggregate", "account"] as const).map((id, i) => {
 				const active = value === id;
 				return (
@@ -99,12 +99,12 @@ function ViewToggle({ value, onChange }: { value: ViewMode; onChange: (v: ViewMo
 						type="button"
 						onClick={() => onChange(id)}
 						className={cn(
-							"px-3.5 py-2 transition-[background-color,color] duration-200 ease-designhub",
+							"whitespace-nowrap px-2.5 py-2 transition-[background-color,color] duration-200 ease-designhub min-[375px]:px-3.5",
 							i === 0 && "border-r border-gray-300",
 							active ? "bg-gray-950 text-white" : "text-gray-500 hover:bg-gray-50 hover:text-gray-950",
 						)}
 					>
-						{id === "aggregate" ? "Aggregate View" : "Per Akun"}
+						{id === "aggregate" ? "Aggregate" : "Per Akun"}
 					</button>
 				);
 			})}
