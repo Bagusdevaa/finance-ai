@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { motion } from "framer-motion";
+import { useMemo, useState, useRef, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import Link from "next/link";
 import { Header, IconButton } from "@/components/layout/Header";
 import { StatCard, StatGrid } from "@/components/ui/StatCard";
 import {
@@ -10,6 +11,8 @@ import {
 	cashflowSeries,
 	allocationSegments,
 	aiInsights,
+	dummyTransactions,
+	dummyStockHoldings,
 	type DummyTransaction,
 	type AiInsight,
 } from "@/lib/dummy-data";
@@ -29,36 +32,58 @@ const itemVariants = {
 };
 
 export default function DashboardPage() {
+	const [showSearch, setShowSearch] = useState(false);
+	const [showNotif, setShowNotif] = useState(false);
+	const notifRef = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		if (!showNotif) return;
+		const handler = (e: MouseEvent) => {
+			if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+				setShowNotif(false);
+			}
+		};
+		document.addEventListener("mousedown", handler);
+		return () => document.removeEventListener("mousedown", handler);
+	}, [showNotif]);
+
 	return (
 		<>
 			<Header
 				greeting={
-					<h1 className="m-0 font-serif text-[24px] font-normal leading-[1.1] tracking-tight2 text-gray-950">
+					<h1 className="m-0 whitespace-nowrap font-serif text-[18px] font-normal leading-[1.1] tracking-tight2 text-gray-950 sm:text-[24px]">
 						Selamat sore, <em className="font-normal italic text-gray-700">Bagus.</em>
 					</h1>
 				}
-				subtitle={<TodayDate />}
+				subtitle={<span className="hidden sm:inline"><TodayDate /></span>}
 				actions={
 					<>
-						<IconButton ariaLabel="Cari">
+						<IconButton ariaLabel="Cari" onClick={() => setShowSearch(true)}>
 							<SearchSvg />
 						</IconButton>
-						<IconButton ariaLabel="Notifikasi" dot>
-							<BellSvg />
-						</IconButton>
-						<button
-							type="button"
-							className="inline-flex h-[38px] items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-[13px] font-medium text-gray-950 transition-[background-color,border-color] duration-200 ease-designhub hover:border-gray-950 hover:bg-gray-50"
+						<div className="relative" ref={notifRef}>
+							<IconButton ariaLabel="Notifikasi" dot onClick={() => setShowNotif((v) => !v)}>
+								<BellSvg />
+							</IconButton>
+							<AnimatePresence>
+								{showNotif && <NotificationDropdown onClose={() => setShowNotif(false)} />}
+							</AnimatePresence>
+						</div>
+						<Link
+							href="/import"
+							className="inline-flex h-[34px] items-center gap-2 rounded-lg border border-gray-300 bg-white px-2.5 text-[13px] font-medium text-gray-950 transition-[background-color,border-color] duration-200 ease-designhub hover:border-gray-950 hover:bg-gray-50 min-[375px]:h-[38px] min-[375px]:px-4"
 						>
 							<UploadSvg />
-							<span>Import Data</span>
-						</button>
+							<span className="hidden sm:inline">Import Data</span>
+						</Link>
 					</>
 				}
 			/>
 
+			<SearchOverlay open={showSearch} onClose={() => setShowSearch(false)} />
+
 			<motion.div
-				className="flex flex-col gap-5 px-8 pb-12 pt-7"
+				className="flex flex-col gap-5 px-4 pb-12 pt-7 md:px-8"
 				variants={containerVariants}
 				initial="hidden"
 				animate="show"
@@ -359,13 +384,13 @@ function AiInsightPanel({ insights }: { insights: AiInsight[] }) {
 					</div>
 				))}
 			</div>
-			<button
-				type="button"
+			<Link
+				href="/chat"
 				className="flex h-12 w-full items-center justify-center gap-2 border-t border-gray-200 text-[13px] font-medium text-gray-950 transition-colors duration-200 ease-designhub hover:bg-gray-50"
 			>
 				Tanya AI
 				<ArrowRightSvg />
-			</button>
+			</Link>
 		</div>
 	);
 }
@@ -422,7 +447,7 @@ function AllocationPanel() {
 					Lihat Semua →
 				</a>
 			</div>
-			<div className="flex items-center gap-6 px-5 py-6">
+			<div className="flex flex-col items-center gap-6 px-5 py-6 sm:flex-row sm:items-center">
 				<div className="relative h-[200px] w-[200px] flex-none">
 					<svg viewBox="0 0 200 200" className="h-[200px] w-[200px] -rotate-90">
 						<circle cx="100" cy="100" r={r} fill="none" stroke="#f4f4f4" strokeWidth="18" />
@@ -594,6 +619,159 @@ function ArrowRightSvg() {
 			<path d="M5 12h14" />
 			<path d="M13 6l6 6-6 6" />
 		</svg>
+	);
+}
+
+// =============================================================================
+// Search overlay
+// =============================================================================
+
+function SearchOverlay({ open, onClose }: { open: boolean; onClose: () => void }) {
+	const [query, setQuery] = useState("");
+	const inputRef = useRef<HTMLInputElement>(null);
+
+	useEffect(() => {
+		if (!open) return;
+		const handler = (e: globalThis.KeyboardEvent) => {
+			if (e.key === "Escape") onClose();
+		};
+		document.addEventListener("keydown", handler);
+		return () => document.removeEventListener("keydown", handler);
+	}, [open, onClose]);
+
+	useEffect(() => {
+		if (open) {
+			setQuery("");
+			setTimeout(() => inputRef.current?.focus(), 50);
+		}
+	}, [open]);
+
+	const results = useMemo(() => {
+		if (!query.trim()) return [];
+		const q = query.toLowerCase();
+		const txResults = dummyTransactions
+			.filter((t) => `${t.merchant_name} ${t.description} ${t.category}`.toLowerCase().includes(q))
+			.slice(0, 4)
+			.map((t) => ({ type: "transaction" as const, id: t.id, title: t.merchant_name, sub: `${t.category} · ${t.account}`, amount: t.amount }));
+		const stockResults = dummyStockHoldings
+			.filter((s) => `${s.ticker} ${s.name}`.toLowerCase().includes(q))
+			.slice(0, 2)
+			.map((s) => ({ type: "asset" as const, id: s.ticker, title: `${s.ticker} — ${s.name}`, sub: `${s.totalLot} lot · ${s.accounts.map((a) => a.platform).join(", ")}`, amount: s.value }));
+		return [...txResults, ...stockResults];
+	}, [query]);
+
+	return (
+		<AnimatePresence>
+			{open && (
+				<motion.div
+					className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pt-[12vh]"
+					initial={{ opacity: 0 }}
+					animate={{ opacity: 1 }}
+					exit={{ opacity: 0 }}
+					transition={{ duration: 0.2, ease: easeDesignhub }}
+					onClick={onClose}
+				>
+					<motion.div
+						className="w-full max-w-[560px] border border-gray-200 bg-white shadow-[0_24px_60px_-16px_rgba(0,0,0,0.25)]"
+						initial={{ opacity: 0, scale: 0.96, y: -8 }}
+						animate={{ opacity: 1, scale: 1, y: 0 }}
+						exit={{ opacity: 0, scale: 0.96, y: -8 }}
+						transition={{ duration: 0.25, ease: easeDesignhub }}
+						onClick={(e) => e.stopPropagation()}
+					>
+						<div className="flex items-center gap-3 border-b border-gray-200 px-5 py-3.5">
+							<SearchSvg />
+							<input
+								ref={inputRef}
+								type="text"
+								value={query}
+								onChange={(e) => setQuery(e.target.value)}
+								placeholder="Cari transaksi, aset, atau kategori..."
+								className="flex-1 bg-transparent text-sm text-gray-950 outline-none placeholder:text-gray-400"
+							/>
+							<button
+								type="button"
+								onClick={onClose}
+								className="rounded border border-gray-200 px-2 py-0.5 font-mono text-[10px] text-gray-500 transition-colors hover:border-gray-400 hover:text-gray-950"
+							>
+								ESC
+							</button>
+						</div>
+						{query.trim() && (
+							<div className="max-h-[340px] overflow-y-auto py-2">
+								{results.length === 0 ? (
+									<div className="px-5 py-8 text-center text-sm text-gray-500">
+										Tidak ditemukan hasil untuk &ldquo;{query}&rdquo;
+									</div>
+								) : (
+									results.map((r) => (
+										<div
+											key={r.id}
+											className="flex items-center justify-between gap-3 px-5 py-3 transition-colors duration-150 hover:bg-gray-50"
+										>
+											<div className="min-w-0">
+												<div className="truncate text-[13px] font-medium text-gray-950">{r.title}</div>
+												<div className="mt-0.5 text-[11px] text-gray-400">
+													{r.type === "transaction" ? "Transaksi" : "Aset"} · {r.sub}
+												</div>
+											</div>
+											<span className={cn(
+												"shrink-0 font-mono text-[13px] tabular-nums",
+												r.amount > 0 ? "font-medium text-gray-950" : "text-gray-600",
+											)}>
+												{r.amount > 0 ? "+ " : "− "}
+												{formatRupiah(Math.abs(r.amount))}
+											</span>
+										</div>
+									))
+								)}
+							</div>
+						)}
+					</motion.div>
+				</motion.div>
+			)}
+		</AnimatePresence>
+	);
+}
+
+// =============================================================================
+// Notification dropdown
+// =============================================================================
+
+const NOTIFICATIONS = [
+	{ id: 1, text: "Pengeluaran makan melebihi anggaran bulan ini", time: "2 jam lalu" },
+	{ id: 2, text: "Dividen BBCA masuk Rp 450.000", time: "Kemarin, 14:30" },
+	{ id: 3, text: "Harga TLKM naik 3,2% hari ini", time: "Kemarin, 09:15" },
+	{ id: 4, text: "Tagihan listrik PLN jatuh tempo 3 hari lagi", time: "2 hari lalu" },
+];
+
+function NotificationDropdown({ onClose }: { onClose: () => void }) {
+	return (
+		<motion.div
+			initial={{ opacity: 0, y: -4 }}
+			animate={{ opacity: 1, y: 0 }}
+			exit={{ opacity: 0, y: -4 }}
+			transition={{ duration: 0.2, ease: easeDesignhub }}
+			className="fixed right-3 top-[70px] z-20 w-[calc(100vw-24px)] max-w-[340px] border border-gray-200 bg-white shadow-[0_12px_32px_-8px_rgba(0,0,0,0.15)] sm:absolute sm:right-0 sm:top-[calc(100%+6px)] sm:w-[320px]"
+		>
+			<div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+				<span className="text-[13px] font-medium text-gray-950">Notifikasi</span>
+				<span className="font-mono text-[10px] text-gray-400">{NOTIFICATIONS.length} baru</span>
+			</div>
+			<div className="py-1">
+				{NOTIFICATIONS.map((n) => (
+					<button
+						key={n.id}
+						type="button"
+						onClick={onClose}
+						className="flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors duration-150 hover:bg-gray-50"
+					>
+						<span className="text-[13px] leading-snug text-gray-700">{n.text}</span>
+						<span className="font-mono text-[10px] text-gray-400">{n.time}</span>
+					</button>
+				))}
+			</div>
+		</motion.div>
 	);
 }
 

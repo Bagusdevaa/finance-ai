@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Header } from "@/components/layout/Header";
 import {
-	dummyBudgets,
+	dummyBudgets as initialBudgets,
 	dummyBudgetSummary,
 	type DummyBudget,
 } from "@/lib/dummy-data";
@@ -21,20 +21,30 @@ const MONTHS = ["MAR 2026", "APR 2026", "MEI 2026"];
 // pertahankan. Selain itu strict monochrome.
 export default function BudgetPage() {
 	const [monthIdx, setMonthIdx] = useState(1);
+	const [budgets, setBudgets] = useState<DummyBudget[]>(initialBudgets);
+	const [showAddModal, setShowAddModal] = useState(false);
+
+	const handleAddBudget = (b: DummyBudget) => {
+		setBudgets((prev) => [...prev, b]);
+		setShowAddModal(false);
+	};
 
 	return (
 		<>
 			<Header
 				title="Anggaran"
-				actions={<MonthSelector idx={monthIdx} onChange={setMonthIdx} />}
+				actions={<div className="hidden sm:flex"><MonthSelector idx={monthIdx} onChange={setMonthIdx} /></div>}
 			/>
 
 			<motion.div
-				className="mx-auto max-w-[1200px] px-8 pb-20 pt-6"
+				className="mx-auto max-w-[1200px] px-4 pb-20 pt-6 md:px-8"
 				initial={{ opacity: 0, y: 8 }}
 				animate={{ opacity: 1, y: 0 }}
 				transition={{ duration: 0.45, ease: easeDesignhub }}
 			>
+				<div className="mb-4 sm:hidden">
+					<MonthSelector idx={monthIdx} onChange={setMonthIdx} />
+				</div>
 				<BudgetHero />
 
 				<div className="mb-4 mt-8 flex flex-wrap items-end justify-between gap-3">
@@ -46,8 +56,14 @@ export default function BudgetPage() {
 					</div>
 				</div>
 
-				<BudgetGrid />
+				<BudgetGrid budgets={budgets} onAdd={() => setShowAddModal(true)} />
 			</motion.div>
+
+			<AddBudgetModal
+				open={showAddModal}
+				onClose={() => setShowAddModal(false)}
+				onAdd={handleAddBudget}
+			/>
 		</>
 	);
 }
@@ -58,24 +74,24 @@ export default function BudgetPage() {
 
 function MonthSelector({ idx, onChange }: { idx: number; onChange: (n: number) => void }) {
 	return (
-		<div className="flex items-center gap-2.5">
+		<div className="flex items-center gap-1.5 min-[375px]:gap-2.5">
 			<div className="inline-flex h-9 items-center overflow-hidden rounded-lg border border-gray-300 text-[13px] font-medium text-gray-950">
 				<button
 					type="button"
 					onClick={() => onChange(Math.max(0, idx - 1))}
-					className="h-full px-2.5 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-950"
+					className="h-full px-2 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-950 min-[375px]:px-2.5"
 				>
 					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
 						<polyline points="15 18 9 12 15 6" />
 					</svg>
 				</button>
-				<span className="grid h-full min-w-[130px] place-items-center border-x border-gray-300 px-3.5 font-mono text-xs uppercase tracking-[0.04em]">
+				<span className="grid h-full min-w-[90px] place-items-center border-x border-gray-300 px-2 font-mono text-[10px] uppercase tracking-[0.04em] min-[375px]:min-w-[130px] min-[375px]:px-3.5 min-[375px]:text-xs">
 					{MONTHS[idx]}
 				</span>
 				<button
 					type="button"
 					onClick={() => onChange(Math.min(MONTHS.length - 1, idx + 1))}
-					className="h-full px-2.5 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-950"
+					className="h-full px-2 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-950 min-[375px]:px-2.5"
 				>
 					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
 						<polyline points="9 18 15 12 9 6" />
@@ -85,7 +101,7 @@ function MonthSelector({ idx, onChange }: { idx: number; onChange: (n: number) =
 			<button
 				type="button"
 				onClick={() => onChange(1)}
-				className="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-3.5 text-[13px] font-medium text-gray-700 transition-[border-color,color] duration-200 ease-designhub hover:border-gray-950 hover:bg-gray-50 hover:text-gray-950"
+				className="inline-flex h-9 shrink-0 items-center whitespace-nowrap rounded-lg border border-gray-300 bg-white px-2.5 text-[11px] font-medium text-gray-700 transition-[border-color,color] duration-200 ease-designhub hover:border-gray-950 hover:bg-gray-50 hover:text-gray-950 min-[375px]:px-3.5 min-[375px]:text-[13px]"
 			>
 				Reset Bulan
 			</button>
@@ -187,13 +203,13 @@ function HeroCell({
 // Budget grid
 // =============================================================================
 
-function BudgetGrid() {
+function BudgetGrid({ budgets, onAdd }: { budgets: DummyBudget[]; onAdd: () => void }) {
 	return (
 		<div className="grid grid-cols-1 border border-gray-200 lg:grid-cols-2">
-			{dummyBudgets.map((b, i) => (
-				<BudgetCard key={b.id} b={b} idx={i} total={dummyBudgets.length} />
+			{budgets.map((b, i) => (
+				<BudgetCard key={b.id} b={b} idx={i} total={budgets.length} />
 			))}
-			<AddBudgetCard total={dummyBudgets.length} />
+			<AddBudgetCard total={budgets.length} onAdd={onAdd} />
 		</div>
 	);
 }
@@ -306,14 +322,13 @@ function BudgetCard({ b, idx, total }: { b: DummyBudget; idx: number; total: num
 	);
 }
 
-function AddBudgetCard({ total }: { total: number }) {
-	// "+" card always last → di kolom kanan kalau total even, atau kiri kalau ganjil.
-	// Kasih border-r-none kalau di col kanan.
-	const idx = total; // setelah semua budget
+function AddBudgetCard({ total, onAdd }: { total: number; onAdd: () => void }) {
+	const idx = total;
 	const isRight = idx % 2 === 1;
 	return (
 		<button
 			type="button"
+			onClick={onAdd}
 			className={cn(
 				"flex flex-col items-center justify-center gap-1.5 bg-white p-6 text-center text-gray-500 transition-colors duration-200 ease-designhub hover:bg-gray-50 hover:text-gray-950",
 				!isRight && "lg:border-r border-gray-200",
@@ -403,4 +418,143 @@ function CategoryIcon({ name }: { name: string }) {
 				</svg>
 			);
 	}
+}
+
+// =============================================================================
+// Add Budget Modal
+// =============================================================================
+
+function AddBudgetModal({
+	open,
+	onClose,
+	onAdd,
+}: {
+	open: boolean;
+	onClose: () => void;
+	onAdd: (b: DummyBudget) => void;
+}) {
+	const [category, setCategory] = useState("");
+	const [limitStr, setLimitStr] = useState("");
+	const [subtitle, setSubtitle] = useState("");
+
+	useEffect(() => {
+		if (open) {
+			setCategory("");
+			setLimitStr("");
+			setSubtitle("");
+		}
+	}, [open]);
+
+	useEffect(() => {
+		if (!open) return;
+		const handler = (e: globalThis.KeyboardEvent) => {
+			if (e.key === "Escape") onClose();
+		};
+		document.addEventListener("keydown", handler);
+		return () => document.removeEventListener("keydown", handler);
+	}, [open, onClose]);
+
+	const handleSubmit = () => {
+		const limit = parseFloat(limitStr.replace(/\./g, "").replace(",", "."));
+		if (!category.trim() || isNaN(limit) || limit <= 0) return;
+		const budget: DummyBudget = {
+			id: `bg-manual-${Date.now()}`,
+			category: category.trim(),
+			subtitle: subtitle.trim() || category.trim(),
+			limit,
+			spent: 0,
+			transactions: [],
+		};
+		onAdd(budget);
+	};
+
+	return (
+		<AnimatePresence>
+			{open && (
+				<motion.div
+					className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+					initial={{ opacity: 0 }}
+					animate={{ opacity: 1 }}
+					exit={{ opacity: 0 }}
+					transition={{ duration: 0.2 }}
+					onClick={onClose}
+				>
+					<motion.div
+						className="w-full max-w-[420px] border border-gray-200 bg-white shadow-[0_24px_60px_-16px_rgba(0,0,0,0.25)]"
+						initial={{ opacity: 0, scale: 0.95, y: 8 }}
+						animate={{ opacity: 1, scale: 1, y: 0 }}
+						exit={{ opacity: 0, scale: 0.95, y: 8 }}
+						transition={{ duration: 0.25, ease: easeDesignhub }}
+						onClick={(e) => e.stopPropagation()}
+					>
+						<div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+							<h2 className="text-[15px] font-medium text-gray-950">Tambah Anggaran Kategori</h2>
+							<button
+								type="button"
+								onClick={onClose}
+								className="grid h-7 w-7 place-items-center rounded text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-950"
+							>
+								<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+									<path d="M6 6l12 12M18 6l-12 12" />
+								</svg>
+							</button>
+						</div>
+						<div className="flex flex-col gap-4 px-6 py-5">
+							<div className="flex flex-col gap-1.5">
+								<label className="text-[11px] font-medium uppercase tracking-label text-gray-500">Nama Kategori</label>
+								<input
+									type="text"
+									value={category}
+									onChange={(e) => setCategory(e.target.value)}
+									placeholder="Contoh: Olahraga"
+									className="h-9 w-full border border-gray-200 bg-gray-50 px-3 text-[13px] text-gray-950 outline-none transition-colors placeholder:text-gray-400 focus:border-gray-950 focus:bg-white"
+									autoFocus
+								/>
+							</div>
+							<div className="flex flex-col gap-1.5">
+								<label className="text-[11px] font-medium uppercase tracking-label text-gray-500">Anggaran Bulanan</label>
+								<div className="relative">
+									<span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-gray-500">Rp</span>
+									<input
+										type="text"
+										value={limitStr}
+										onChange={(e) => setLimitStr(e.target.value)}
+										placeholder="500.000"
+										className="h-9 w-full border border-gray-200 bg-gray-50 pl-9 pr-3 font-mono text-[13px] text-gray-950 outline-none transition-colors placeholder:text-gray-400 focus:border-gray-950 focus:bg-white"
+									/>
+								</div>
+							</div>
+							<div className="flex flex-col gap-1.5">
+								<label className="text-[11px] font-medium uppercase tracking-label text-gray-500">Sub-label (opsional)</label>
+								<input
+									type="text"
+									value={subtitle}
+									onChange={(e) => setSubtitle(e.target.value)}
+									placeholder="Contoh: Gym · Suplemen"
+									className="h-9 w-full border border-gray-200 bg-gray-50 px-3 text-[13px] text-gray-950 outline-none transition-colors placeholder:text-gray-400 focus:border-gray-950 focus:bg-white"
+								/>
+							</div>
+						</div>
+						<div className="flex gap-2 border-t border-gray-200 px-6 py-4">
+							<button
+								type="button"
+								onClick={onClose}
+								className="flex-1 rounded-lg border border-gray-300 px-3.5 py-2.5 text-[13px] font-medium text-gray-700 transition-colors hover:border-gray-950 hover:text-gray-950"
+							>
+								Batal
+							</button>
+							<button
+								type="button"
+								onClick={handleSubmit}
+								disabled={!category.trim() || !limitStr.trim()}
+								className="flex-1 rounded-lg bg-gray-950 px-3.5 py-2.5 text-[13px] font-medium text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-40"
+							>
+								Simpan
+							</button>
+						</div>
+					</motion.div>
+				</motion.div>
+			)}
+		</AnimatePresence>
+	);
 }
