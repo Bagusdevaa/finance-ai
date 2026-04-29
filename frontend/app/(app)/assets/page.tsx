@@ -54,12 +54,16 @@ export default function AssetsPage() {
 		<>
 			<Header
 				title={
-					<span className="truncate">
+					<>
 						Aset & <em className="font-normal italic text-gray-700">Portofolio</em>
-					</span>
+					</>
 				}
-				actions={<ViewToggle value={view} onChange={setView} />}
+				actions={<div className="hidden min-[480px]:flex"><ViewToggle value={view} onChange={setView} /></div>}
 			/>
+
+			<div className="flex items-center justify-between px-4 pt-3 min-[480px]:hidden md:px-8">
+				<ViewToggle value={view} onChange={setView} />
+			</div>
 
 			{/* HERO BANNER (full-width, black) */}
 			<NetWorthHero />

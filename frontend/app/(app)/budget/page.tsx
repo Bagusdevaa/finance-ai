@@ -33,7 +33,7 @@ export default function BudgetPage() {
 		<>
 			<Header
 				title="Anggaran"
-				actions={<MonthSelector idx={monthIdx} onChange={setMonthIdx} />}
+				actions={<div className="hidden sm:flex"><MonthSelector idx={monthIdx} onChange={setMonthIdx} /></div>}
 			/>
 
 			<motion.div
@@ -42,6 +42,9 @@ export default function BudgetPage() {
 				animate={{ opacity: 1, y: 0 }}
 				transition={{ duration: 0.45, ease: easeDesignhub }}
 			>
+				<div className="mb-4 sm:hidden">
+					<MonthSelector idx={monthIdx} onChange={setMonthIdx} />
+				</div>
 				<BudgetHero />
 
 				<div className="mb-4 mt-8 flex flex-wrap items-end justify-between gap-3">
