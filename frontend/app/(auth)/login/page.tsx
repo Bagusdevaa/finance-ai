@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/cn";
+import { login as apiLogin, register as apiRegister } from "@/lib/api/auth";
+import { getApiError, getErrorMessage } from "@/lib/api";
 
 type Mode = "login" | "register";
 
@@ -168,7 +170,7 @@ export default function LoginPage() {
 		}
 	};
 
-	const handleLoginSubmit = (e: React.FormEvent) => {
+	const handleLoginSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
 		const fields = ["email", "password"];
 		const touched: Record<string, boolean> = {};
@@ -184,15 +186,25 @@ export default function LoginPage() {
 		setLoginErrors(errors);
 		if (!ok) return;
 		setLoginLoading(true);
-		setTimeout(() => {
+		try {
+			await apiLogin(loginEmail.trim(), loginPassword);
 			setSuccessTitle("Berhasil masuk.");
 			setSuccessText("Mengarahkan ke dashboard kamu...");
 			setShowSuccess(true);
-			setTimeout(() => router.push("/dashboard"), 1800);
-		}, 700);
+			setTimeout(() => router.push("/dashboard"), 1200);
+		} catch (err) {
+			const apiErr = getApiError(err);
+			const msg = getErrorMessage(err, "Email atau password salah.");
+			if (apiErr?.code === "INVALID_CREDENTIALS") {
+				setLoginErrors((p) => ({ ...p, password: "Email atau password salah." }));
+			} else {
+				setLoginErrors((p) => ({ ...p, password: msg }));
+			}
+			setLoginLoading(false);
+		}
 	};
 
-	const handleRegSubmit = (e: React.FormEvent) => {
+	const handleRegSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
 		const fields = ["name", "email", "password", "confirm"];
 		const touched: Record<string, boolean> = {};
@@ -208,12 +220,28 @@ export default function LoginPage() {
 		setRegErrors(errors);
 		if (!ok) return;
 		setRegLoading(true);
-		setTimeout(() => {
+		try {
+			await apiRegister({
+				email: regEmail.trim(),
+				password: regPassword,
+				name: regName.trim(),
+			});
+			// Auto-login after register so user lands authenticated.
+			await apiLogin(regEmail.trim(), regPassword);
 			setSuccessTitle("Akun kamu siap.");
-			setSuccessText("Mari kita setup dulu...");
+			setSuccessText("Mengarahkan ke dashboard...");
 			setShowSuccess(true);
-			setTimeout(() => router.push("/onboarding"), 1800);
-		}, 900);
+			setTimeout(() => router.push("/dashboard"), 1200);
+		} catch (err) {
+			const apiErr = getApiError(err);
+			const msg = getErrorMessage(err, "Gagal membuat akun.");
+			if (apiErr?.code === "EMAIL_TAKEN") {
+				setRegErrors((p) => ({ ...p, email: "Email sudah terdaftar." }));
+			} else {
+				setRegErrors((p) => ({ ...p, email: msg }));
+			}
+			setRegLoading(false);
+		}
 	};
 
 	const pwStrength = getPasswordStrength(regPassword);
