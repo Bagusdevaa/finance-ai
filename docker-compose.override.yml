@@ -1,0 +1,12 @@
+# Local development override.
+# Auto-loaded by `docker compose` on top of docker-compose.yml.
+# Exposes Postgres and Qdrant to the host so you can run uvicorn/alembic locally.
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+
+  qdrant:
+    ports:
+      - "6333:6333"
