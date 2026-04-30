@@ -40,6 +40,7 @@ def create_access_token(user_id: uuid.UUID) -> str:
 		"iat": int(now.timestamp()),
 		"exp": int(expire.timestamp()),
 		"type": "access",
+		"jti": uuid.uuid4().hex,
 	}
 	return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
