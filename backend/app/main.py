@@ -7,12 +7,16 @@ Semua wiring (CORS, exception handler, middleware, routers) dilakukan di sini.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.accounts.router import router as accounts_router
 from app.auth.router import router as auth_router
+from app.budgets.router import router as budgets_router
 from app.config import get_settings
 from app.core.errors import register_exception_handlers
 from app.core.health import router as health_router
 from app.core.logging import configure_logging
 from app.core.middleware import RequestLoggingMiddleware
+from app.holdings.router import router as holdings_router
+from app.transactions.router import router as transactions_router
 
 
 def create_app() -> FastAPI:
@@ -39,6 +43,10 @@ def create_app() -> FastAPI:
 
 	app.include_router(health_router)
 	app.include_router(auth_router, prefix="/v1/auth", tags=["auth"])
+	app.include_router(accounts_router, prefix="/v1/accounts", tags=["accounts"])
+	app.include_router(transactions_router, prefix="/v1/transactions", tags=["transactions"])
+	app.include_router(budgets_router, prefix="/v1/budgets", tags=["budgets"])
+	app.include_router(holdings_router, prefix="/v1/holdings", tags=["holdings"])
 
 	return app
 

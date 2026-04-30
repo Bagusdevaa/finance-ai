@@ -18,6 +18,10 @@ from app.config import get_settings
 from app.database import Base
 from app.users.models import User  # noqa: F401
 from app.auth.models import RefreshToken  # noqa: F401
+from app.accounts.models import Account  # noqa: F401
+from app.transactions.models import Transaction  # noqa: F401
+from app.budgets.models import Budget  # noqa: F401
+from app.holdings.models import StockHolding  # noqa: F401
 
 
 config = context.config

@@ -26,9 +26,14 @@ def event_loop():
 
 @pytest_asyncio.fixture
 async def clean_db() -> AsyncIterator[None]:
-	# TRUNCATE CASCADE — refresh_tokens FK ke users, urutannya tidak penting kalau pakai CASCADE.
+	# TRUNCATE CASCADE — semua FK ke users akan ikut bersih.
 	async with AsyncSessionLocal() as session:
-		await session.execute(text("TRUNCATE TABLE refresh_tokens, users CASCADE"))
+		await session.execute(
+			text(
+				"TRUNCATE TABLE stock_holdings, budgets, transactions, "
+				"accounts, refresh_tokens, users CASCADE"
+			)
+		)
 		await session.commit()
 	yield
 

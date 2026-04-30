@@ -10,6 +10,7 @@ from typing import Any
 
 import structlog
 from fastapi import FastAPI, Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -82,13 +83,14 @@ async def _app_error_handler(request: Request, exc: AppError) -> JSONResponse:
 async def _validation_handler(
 	request: Request, exc: RequestValidationError
 ) -> JSONResponse:
-	# Pydantic returns list of error dicts; bungkus sebagai details["errors"].
+	# jsonable_encoder strips non-serializable bits (e.g. raw ValueError in `ctx`)
+	# that Pydantic v2 puts in error dicts.
 	return JSONResponse(
 		status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
 		content=_error_payload(
 			"VALIDATION_ERROR",
 			"Invalid input",
-			{"errors": exc.errors()},
+			{"errors": jsonable_encoder(exc.errors())},
 		),
 	)
 
