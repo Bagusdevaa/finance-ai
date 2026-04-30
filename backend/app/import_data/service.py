@@ -10,11 +10,14 @@ from decimal import Decimal
 from pathlib import Path
 from uuid import UUID
 
+from fastapi import BackgroundTasks
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.accounts.models import Account
+from app.ai.categorizer import categorize_rule_based
+from app.ai.rag_pipeline import index_transactions
 from app.core.errors import ConflictError, ForbiddenError, NotFoundError
 from app.database import AsyncSessionLocal
 from app.import_data.models import (
@@ -190,6 +193,12 @@ async def process_job(job_id: UUID) -> None:
 			dup = await session.scalar(dup_stmt)
 			is_dup = dup is not None
 
+			# Auto-categorize via rule-based kalau parser nggak isi.
+			# Hanya rule-based — deterministic & gratis. LLM fallback skip dulu.
+			category = p.category or categorize_rule_based(
+				p.merchant_name, p.description
+			)
+
 			row = ImportRow(
 				job_id=job.id,
 				user_id=job.user_id,
@@ -199,7 +208,7 @@ async def process_job(job_id: UUID) -> None:
 				currency=p.currency,
 				merchant_name=p.merchant_name,
 				description=p.description,
-				category=p.category,
+				category=category,
 				confidence_score=p.confidence_score,
 				raw_text=p.raw_text,
 				is_duplicate=is_dup,
@@ -269,7 +278,10 @@ async def exclude_row(
 # ---------- confirm / cancel ----------
 
 async def confirm_job(
-	session: AsyncSession, user: User, job_id: UUID
+	session: AsyncSession,
+	user: User,
+	job_id: UUID,
+	background_tasks: BackgroundTasks | None = None,
 ) -> ImportConfirmResponse:
 	job = await get_job(session, user, job_id)
 
@@ -281,7 +293,8 @@ async def confirm_job(
 
 	tx_source = _source_to_transaction_source(job.source_type)
 
-	transactions_created = 0
+	# Kumpulkan tx baru supaya bisa di-index ke RAG setelah commit.
+	new_txs: list[Transaction] = []
 	already_existed = 0
 	for row in visible_rows(job):
 		if row.is_excluded:
@@ -303,15 +316,22 @@ async def confirm_job(
 			confidence_score=row.confidence_score,
 		)
 		session.add(tx)
-		transactions_created += 1
+		new_txs.append(tx)
 
 	job.status = ImportJobStatus.confirmed
 	job.confirmed_at = datetime.now(timezone.utc)
 	await session.commit()
 
+	# Index ke Qdrant via background task supaya endpoint cepat.
+	# Best-effort: kalau background_tasks tidak di-pass (mis. dipanggil dari
+	# script/test), skip indexing — bisa di-trigger manual nanti.
+	new_ids = [tx.id for tx in new_txs]
+	if new_ids and background_tasks is not None:
+		background_tasks.add_task(index_transactions, new_ids)
+
 	return ImportConfirmResponse(
 		job_id=job.id,
-		transactions_created=transactions_created,
+		transactions_created=len(new_ids),
 		already_existed=already_existed,
 	)
 

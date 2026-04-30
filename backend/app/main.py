@@ -4,12 +4,17 @@ App di-instantiate sekali di module-level (dipakai uvicorn).
 Semua wiring (CORS, exception handler, middleware, routers) dilakukan di sini.
 """
 
+from contextlib import asynccontextmanager
+
+import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.accounts.router import router as accounts_router
+from app.ai.qdrant import ensure_collection
 from app.auth.router import router as auth_router
 from app.budgets.router import router as budgets_router
+from app.chat.router import router as chat_router
 from app.config import get_settings
 from app.core.errors import register_exception_handlers
 from app.core.health import router as health_router
@@ -20,6 +25,19 @@ from app.import_data.router import router as import_router
 from app.transactions.router import router as transactions_router
 
 
+_logger = structlog.get_logger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+	# Best-effort: kalau Qdrant down, AI features degrade tapi app tetap boot.
+	try:
+		await ensure_collection()
+	except Exception as exc:
+		_logger.warning("qdrant_init_failed", error=str(exc))
+	yield
+
+
 def create_app() -> FastAPI:
 	configure_logging()
 	settings = get_settings()
@@ -28,6 +46,7 @@ def create_app() -> FastAPI:
 		title="FinanceAI API",
 		version="0.1.0",
 		description="Personal finance platform untuk pasar Indonesia.",
+		lifespan=lifespan,
 	)
 
 	# CORS — frontend Next.js di FRONTEND_URL.
@@ -49,6 +68,7 @@ def create_app() -> FastAPI:
 	app.include_router(budgets_router, prefix="/v1/budgets", tags=["budgets"])
 	app.include_router(holdings_router, prefix="/v1/holdings", tags=["holdings"])
 	app.include_router(import_router, prefix="/v1/import", tags=["import"])
+	app.include_router(chat_router, prefix="/v1/chat", tags=["chat"])
 
 	return app
 

@@ -23,6 +23,7 @@ from app.transactions.models import Transaction  # noqa: F401
 from app.budgets.models import Budget  # noqa: F401
 from app.holdings.models import StockHolding  # noqa: F401
 from app.import_data.models import ImportJob, ImportRow  # noqa: F401
+from app.chat.models import ChatMessage, ChatSession  # noqa: F401
 
 
 config = context.config

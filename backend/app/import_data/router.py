@@ -117,10 +117,11 @@ async def delete_row(
 @router.post("/jobs/{job_id}/confirm", response_model=ImportConfirmResponse)
 async def confirm_job(
 	job_id: UUID,
+	background_tasks: BackgroundTasks,
 	user: User = Depends(get_current_user),
 	session: AsyncSession = Depends(get_session),
 ):
-	return await service.confirm_job(session, user, job_id)
+	return await service.confirm_job(session, user, job_id, background_tasks)
 
 
 @router.post(

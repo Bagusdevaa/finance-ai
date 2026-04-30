@@ -33,13 +33,16 @@ class Settings(BaseSettings):
 	GOOGLE_REDIRECT_URI: str | None = None
 
 	# Groq
-	GROQ_API_KEY: str | None = None
+	GROQ_API_KEY: str = ""
 	GROQ_MODEL: str = "llama-3.3-70b-versatile"
 	GROQ_VISION_MODEL: str = "llama-3.2-11b-vision-preview"
 
 	# Qdrant
 	QDRANT_URL: str = "http://localhost:6333"
 	QDRANT_COLLECTION: str = "financeai_transactions"
+
+	# Embeddings — multilingual-e5-small: 118MB, 384 dims, support Bahasa Indonesia.
+	EMBEDDING_MODEL: str = "intfloat/multilingual-e5-small"
 
 	# App
 	FRONTEND_URL: str = "http://localhost:3000"
@@ -49,6 +52,11 @@ class Settings(BaseSettings):
 	@property
 	def is_production(self) -> bool:
 		return self.ENVIRONMENT == "production"
+
+	@property
+	def is_ai_enabled(self) -> bool:
+		"""AI features (chat, LLM categorize) butuh Groq key. Kalau kosong: degrade gracefully."""
+		return bool(self.GROQ_API_KEY)
 
 
 @lru_cache
