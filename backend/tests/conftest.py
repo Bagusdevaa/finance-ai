@@ -30,8 +30,8 @@ async def clean_db() -> AsyncIterator[None]:
 	async with AsyncSessionLocal() as session:
 		await session.execute(
 			text(
-				"TRUNCATE TABLE stock_holdings, budgets, transactions, "
-				"accounts, refresh_tokens, users CASCADE"
+				"TRUNCATE TABLE import_rows, import_jobs, stock_holdings, "
+				"budgets, transactions, accounts, refresh_tokens, users CASCADE"
 			)
 		)
 		await session.commit()

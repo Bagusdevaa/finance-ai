@@ -16,6 +16,7 @@ from app.core.health import router as health_router
 from app.core.logging import configure_logging
 from app.core.middleware import RequestLoggingMiddleware
 from app.holdings.router import router as holdings_router
+from app.import_data.router import router as import_router
 from app.transactions.router import router as transactions_router
 
 
@@ -47,6 +48,7 @@ def create_app() -> FastAPI:
 	app.include_router(transactions_router, prefix="/v1/transactions", tags=["transactions"])
 	app.include_router(budgets_router, prefix="/v1/budgets", tags=["budgets"])
 	app.include_router(holdings_router, prefix="/v1/holdings", tags=["holdings"])
+	app.include_router(import_router, prefix="/v1/import", tags=["import"])
 
 	return app
 
