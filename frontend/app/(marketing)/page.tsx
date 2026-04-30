@@ -643,7 +643,7 @@ export default function LandingPage() {
 							<RevealSection
 								key={f.num}
 								delay={i * 0.06}
-								className="group p-[44px_36px_40px] border-r border-b border-gray-200 relative bg-white transition-colors duration-300 ease-designhub hover:bg-gray-50 min-h-[280px]"
+								className="group p-[44px_36px_40px] border-r border-b border-gray-200 relative bg-white transition-colors duration-300 ease-designhub hover:bg-gray-50 lg:min-h-[280px]"
 							>
 								<div className="font-serif font-light text-[88px] max-[880px]:text-[72px] leading-none text-gray-100 absolute top-6 right-8 pointer-events-none select-none tracking-display transition-colors duration-300 ease-designhub group-hover:text-gray-200">
 									{f.num}
@@ -654,7 +654,7 @@ export default function LandingPage() {
 								<p className="text-[15px] leading-[1.7] text-gray-600 max-w-[34ch]">
 									{f.desc}
 								</p>
-								<span className="absolute bottom-7 left-9 text-[14px] text-gray-400 transition-all duration-250 ease-designhub inline-flex items-center gap-[6px] group-hover:text-gray-950 group-hover:translate-x-1">
+								<span className="mt-6 inline-flex items-center gap-[6px] text-[14px] text-gray-400 transition-all duration-250 ease-designhub group-hover:text-gray-950 group-hover:translate-x-1 lg:absolute lg:bottom-7 lg:left-9 lg:mt-0">
 									Pelajari &rarr;
 								</span>
 							</RevealSection>
