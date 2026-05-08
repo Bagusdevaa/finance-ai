@@ -304,4 +304,39 @@ async def post_message_streaming(
 	await db.commit()
 	await db.refresh(assistant_msg)
 
+	# 7. Auto-title kalau ini pesan pertama & title masih default.
+	# Best-effort — kalau gagal, biarin saja, user bisa rename manual nanti.
+	if chat.title == "Percakapan baru":
+		try:
+			new_title = await _generate_title(content)
+			if new_title:
+				chat.title = new_title
+				await db.commit()
+		except Exception as exc:
+			logger.warning("auto_title_failed", error=str(exc))
+
 	yield {"type": "done", "id": str(assistant_msg.id)}
+
+
+async def _generate_title(user_message: str) -> str | None:
+	"""Generate a short (3-6 word) title from the first user message.
+
+	Pakai prompt kecil ke Groq supaya hemat token. Return None kalau gagal
+	atau hasilnya gak masuk akal.
+	"""
+	prompt = (
+		"Buat judul SANGAT singkat (3-6 kata, Bahasa Indonesia) untuk pertanyaan "
+		"keuangan ini. Jawab HANYA judulnya, tanpa tanda kutip, tanpa titik. "
+		f"Pertanyaan: {user_message[:300]}"
+	)
+	buffer = ""
+	async for token in groq_client.chat_stream(
+		[{"role": "user", "content": prompt}]
+	):
+		buffer += token
+		if len(buffer) > 80:
+			break
+	title = buffer.strip().strip('"\'').rstrip(".").strip()
+	if not title or len(title) < 3 or len(title) > 80:
+		return None
+	return title
