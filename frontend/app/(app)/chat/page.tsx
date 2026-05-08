@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSidebar } from "@/components/layout/Sidebar";
 import { cn } from "@/lib/cn";
 import { listSessions, createSession, getSession, deleteSession, postMessageStream } from "@/lib/api/chat";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { getTransaction } from "@/lib/api/transactions";
 import { getErrorMessage } from "@/lib/api";
 import { formatRupiah } from "@/lib/formatRupiah";
@@ -101,14 +102,18 @@ export default function ChatPage() {
 		queryFn: listSessions,
 	});
 
-	// Auto-pick the first session when none is selected.
+	// Auto-pick first session pada mount awal (sekali saja). Setelah itu,
+	// `activeSessionId === null` artinya user explicitly di "Chat Baru" mode —
+	// jangan auto-pick supaya empty state tetap muncul.
+	const didInitialPickRef = useRef(false);
 	useEffect(() => {
-		if (activeSessionId) return;
-		const list = sessions ?? [];
-		if (list.length > 0) {
-			setActiveSessionId(list[0].id);
+		if (didInitialPickRef.current) return;
+		if (!sessions) return;
+		didInitialPickRef.current = true;
+		if (sessions.length > 0) {
+			setActiveSessionId(sessions[0].id);
 		}
-	}, [sessions, activeSessionId]);
+	}, [sessions]);
 
 	const { data: sessionDetail } = useQuery({
 		queryKey: ["chat-session", activeSessionId],
@@ -121,29 +126,37 @@ export default function ChatPage() {
 		[sessionDetail],
 	);
 
-	const newSessionMutation = useMutation({
-		mutationFn: () => createSession(),
-		onSuccess: (s) => {
-			setActiveSessionId(s.id);
-			queryClient.invalidateQueries({ queryKey: ["chat-sessions"] });
-		},
-	});
+	const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
 	const deleteSessionMutation = useMutation({
 		mutationFn: (id: string) => deleteSession(id),
 		onSuccess: (_, deletedId) => {
+			// Update cache dulu sebelum invalidate — supaya auto-pick effect
+			// nggak nyangkut milih session yang baru saja dihapus.
+			queryClient.setQueryData<ChatSessionResponse[]>(
+				["chat-sessions"],
+				(old) => (old ?? []).filter((s) => s.id !== deletedId),
+			);
+
+			// empty "Chat Baru" state, biar user pilih sendiri mau lanjut ke mana.
 			if (deletedId === activeSessionId) {
 				setActiveSessionId(null);
 			}
 			queryClient.invalidateQueries({ queryKey: ["chat-sessions"] });
+			queryClient.removeQueries({ queryKey: ["chat-session", deletedId] });
+			setPendingDeleteId(null);
 		},
+		onError: () => setPendingDeleteId(null),
 	});
 
 	const handleDeleteSession = useCallback((id: string) => {
-		if (window.confirm("Hapus percakapan ini? Tidak bisa dipulihkan.")) {
-			deleteSessionMutation.mutate(id);
-		}
-	}, [deleteSessionMutation]);
+		setPendingDeleteId(id);
+	}, []);
+
+	const pendingDeleteSession = useMemo(
+		() => sessions?.find((s) => s.id === pendingDeleteId) ?? null,
+		[sessions, pendingDeleteId],
+	);
 
 	const scrollToBottom = useCallback(() => {
 		requestAnimationFrame(() => {
@@ -201,7 +214,10 @@ export default function ChatPage() {
 	}, [activeSessionId, queryClient]);
 
 	const handleNewChat = () => {
-		newSessionMutation.mutate();
+		// Lazy: belum bikin session di DB. Empty state ditampilkan;
+		// session beneran dibuat saat user kirim pesan pertama.
+		setActiveSessionId(null);
+		setShowMobileHistory(false);
 	};
 
 	const handleShare = () => {
@@ -271,8 +287,7 @@ export default function ChatPage() {
 						<button
 							type="button"
 							onClick={handleNewChat}
-							disabled={newSessionMutation.isPending}
-							className="inline-flex h-[34px] shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border border-gray-300 px-2.5 text-[13px] font-medium text-gray-700 transition-[background-color,border-color,color] duration-200 hover:border-gray-950 hover:bg-gray-50 hover:text-gray-950 disabled:opacity-50 sm:px-3.5"
+							className="inline-flex h-[34px] shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border border-gray-300 px-2.5 text-[13px] font-medium text-gray-700 transition-[background-color,border-color,color] duration-200 hover:border-gray-950 hover:bg-gray-50 hover:text-gray-950 sm:px-3.5"
 						>
 							<svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14" /><path d="M5 12h14" /></svg>
 							<span className="hidden min-[375px]:inline">Chat Baru</span>
@@ -498,6 +513,26 @@ export default function ChatPage() {
 					</>
 				)}
 			</AnimatePresence>
+
+			<ConfirmDialog
+				open={pendingDeleteId !== null}
+				title="Hapus percakapan?"
+				description={
+					pendingDeleteSession
+						? `"${pendingDeleteSession.title}" beserta seluruh pesannya akan dihapus permanen.`
+						: undefined
+				}
+				confirmLabel="Hapus"
+				cancelLabel="Batal"
+				tone="danger"
+				loading={deleteSessionMutation.isPending}
+				onConfirm={() => {
+					if (pendingDeleteId) deleteSessionMutation.mutate(pendingDeleteId);
+				}}
+				onClose={() => {
+					if (!deleteSessionMutation.isPending) setPendingDeleteId(null);
+				}}
+			/>
 
 			{/* Toast */}
 			<AnimatePresence>
