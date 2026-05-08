@@ -143,9 +143,62 @@ async def _expense_summary(
 	]
 
 
-def _format_context_block(rag_hits: list[dict], expense_summary: list[dict]) -> str:
+async def _dataset_overview(db: AsyncSession, user: User) -> dict | None:
+	"""Total transaksi + date range + total in/out — overview global.
+
+	Tanpa ini, LLM cuma lihat sample RAG dan bisa salah jawab pertanyaan
+	analitis kayak "berapa bulan data yang saya punya?".
+	"""
+	stmt = select(
+		func.count().label("total"),
+		func.min(Transaction.transaction_date).label("min_date"),
+		func.max(Transaction.transaction_date).label("max_date"),
+		func.sum(
+			func.greatest(Transaction.amount, 0)
+		).label("total_in"),
+		func.sum(
+			func.least(Transaction.amount, 0)
+		).label("total_out"),
+	).where(
+		Transaction.user_id == user.id,
+		Transaction.deleted_at.is_(None),
+	)
+	row = (await db.execute(stmt)).one_or_none()
+	if row is None or not row.total:
+		return None
+	return {
+		"total": int(row.total),
+		"min_date": row.min_date.isoformat() if row.min_date else None,
+		"max_date": row.max_date.isoformat() if row.max_date else None,
+		"total_in": float(row.total_in or 0),
+		"total_out": float(row.total_out or 0),
+	}
+
+
+def _format_context_block(
+	rag_hits: list[dict],
+	expense_summary: list[dict],
+	overview: dict | None = None,
+) -> str:
 	"""Susun plain-text context untuk system prompt."""
 	parts: list[str] = []
+
+	if overview:
+		parts.append("Ringkasan dataset user:")
+		parts.append(
+			f"- Total transaksi: {overview['total']}"
+		)
+		if overview["min_date"] and overview["max_date"]:
+			parts.append(
+				f"- Rentang tanggal: {overview['min_date']} sampai {overview['max_date']}"
+			)
+		parts.append(
+			f"- Total pemasukan: Rp{overview['total_in']:,.0f}"
+		)
+		parts.append(
+			f"- Total pengeluaran: Rp{abs(overview['total_out']):,.0f}"
+		)
+		parts.append("")
 
 	if expense_summary:
 		parts.append("Ringkasan pengeluaran 30 hari terakhir per kategori:")
@@ -253,13 +306,19 @@ async def post_message_streaming(
 		logger.warning("expense_summary_failed", error=str(exc))
 		expense_summary = []
 
+	try:
+		overview = await _dataset_overview(db, user)
+	except Exception as exc:
+		logger.warning("dataset_overview_failed", error=str(exc))
+		overview = None
+
 	source_ids = [
 		h["transaction_id"] for h in rag_hits if h.get("transaction_id")
 	]
 	yield {"type": "context", "sources": source_ids}
 
 	# 4. Build messages untuk Groq.
-	context_block = _format_context_block(rag_hits, expense_summary)
+	context_block = _format_context_block(rag_hits, expense_summary, overview)
 	messages: list[dict] = [
 		{"role": "system", "content": _build_system_prompt(context_block)}
 	]
