@@ -179,8 +179,9 @@ def _build_system_prompt(context_block: str) -> str:
 		f"Data transaksi yang relevan:\n{context_block}\n\n"
 		"Aturan:\n"
 		"- Jangan mengarang angka. Kalau data tidak cukup, katakan jujur.\n"
-		"- Sebut sumber dengan ID transaksi kalau spesifik.\n"
-		"- Singkat dan to-the-point."
+		"- JANGAN menulis UUID/ID transaksi di jawaban. Sumber transaksi sudah "
+		"  ditampilkan sebagai pill di UI secara otomatis — fokus ke insight & angka.\n"
+		"- Singkat dan to-the-point. Pakai bullet point hanya kalau perlu."
 	)
 
 

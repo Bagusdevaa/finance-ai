@@ -7,7 +7,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSidebar } from "@/components/layout/Sidebar";
 import { cn } from "@/lib/cn";
 import { listSessions, createSession, getSession, postMessageStream } from "@/lib/api/chat";
+import { getTransaction } from "@/lib/api/transactions";
 import { getErrorMessage } from "@/lib/api";
+import { formatRupiah } from "@/lib/formatRupiah";
 import type { ChatMessageResponse, ChatSessionResponse } from "@/lib/api/types";
 
 const easeDesignhub = [0.2, 0.7, 0.2, 1] as const;
@@ -561,13 +563,7 @@ function MessageBubble({
 			{!isUser && sources.length > 0 && (
 				<div className="mt-2 flex flex-wrap gap-1.5">
 					{sources.map((id) => (
-						<span
-							key={id}
-							className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 font-mono text-[10px] text-gray-500"
-							title={id}
-						>
-							{id.slice(0, 8)}…
-						</span>
+						<SourcePill key={id} txId={id} />
 					))}
 				</div>
 			)}
@@ -577,5 +573,87 @@ function MessageBubble({
 				</span>
 			)}
 		</motion.div>
+	);
+}
+
+// Source pill — fetches transaction detail on mount, shows preview on hover/tap.
+// Tab di mobile (no hover) = toggle. TanStack Query cache by tx id, jadi pill
+// dengan id sama (lintas pesan) cuma fetch sekali.
+function SourcePill({ txId }: { txId: string }) {
+	const [open, setOpen] = useState(false);
+	const wrapRef = useRef<HTMLSpanElement>(null);
+
+	const { data: tx } = useQuery({
+		queryKey: ["transaction", txId],
+		queryFn: () => getTransaction(txId),
+		staleTime: 5 * 60_000,
+	});
+
+	useEffect(() => {
+		if (!open) return;
+		const handler = (e: MouseEvent) => {
+			if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+				setOpen(false);
+			}
+		};
+		document.addEventListener("mousedown", handler);
+		return () => document.removeEventListener("mousedown", handler);
+	}, [open]);
+
+	const label = tx?.merchant_name || `${txId.slice(0, 8)}…`;
+	const amount = tx ? parseFloat(tx.amount) : 0;
+	const isIncome = amount > 0;
+
+	return (
+		<span
+			ref={wrapRef}
+			className="relative inline-flex"
+			onMouseEnter={() => setOpen(true)}
+			onMouseLeave={() => setOpen(false)}
+		>
+			<button
+				type="button"
+				onClick={() => setOpen((v) => !v)}
+				className="inline-flex max-w-[160px] items-center gap-1 truncate rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10.5px] text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-950"
+			>
+				<span className="truncate">{label}</span>
+			</button>
+			<AnimatePresence>
+				{open && tx && (
+					<motion.span
+						initial={{ opacity: 0, y: 4 }}
+						animate={{ opacity: 1, y: 0 }}
+						exit={{ opacity: 0, y: 4 }}
+						transition={{ duration: 0.15 }}
+						className="absolute bottom-full left-0 z-20 mb-1.5 w-[240px] rounded-lg border border-gray-200 bg-white p-3 shadow-[0_10px_30px_-8px_rgba(0,0,0,0.18)]"
+					>
+						<span className="block truncate text-[13px] font-medium text-gray-950">
+							{tx.merchant_name || "(tanpa merchant)"}
+						</span>
+						{tx.description && (
+							<span className="mt-0.5 block truncate text-[11.5px] text-gray-500">
+								{tx.description}
+							</span>
+						)}
+						<span
+							className={cn(
+								"mt-2 block font-mono text-[13px] font-medium tabular-nums",
+								isIncome ? "text-gray-950" : "text-gray-950",
+							)}
+						>
+							{isIncome ? "+" : "−"} {formatRupiah(Math.abs(amount))}
+						</span>
+						<span className="mt-1 flex items-center justify-between font-mono text-[10.5px] text-gray-400">
+							<span>{tx.transaction_date}</span>
+							{tx.category && (
+								<span className="rounded-full bg-gray-100 px-2 py-0.5 text-gray-600">
+									{tx.category}
+								</span>
+							)}
+						</span>
+					</motion.span>
+				)}
+			</AnimatePresence>
+		</span>
 	);
 }
