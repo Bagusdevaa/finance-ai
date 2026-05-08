@@ -1,23 +1,30 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useMemo, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSidebar } from "@/components/layout/Sidebar";
 import { cn } from "@/lib/cn";
+import { getErrorMessage } from "@/lib/api";
+import {
+	uploadImport,
+	getImportJob,
+	updateImportRow,
+	excludeImportRow,
+	confirmImportJob,
+} from "@/lib/api/import";
+import type {
+	ImportJobDetailResponse,
+	ImportRowResponse,
+	ImportSourceType,
+} from "@/lib/api/types";
 
 const easeDesignhub = [0.2, 0.7, 0.2, 1] as const;
 
 interface SourceInstructions {
 	title: string;
 	steps: string[];
-}
-
-interface ReviewRow {
-	date: string;
-	merchant: string;
-	cat: string;
-	amt: number;
-	conf: "ok" | "warn" | "err";
 }
 
 interface SourceGroupItem {
@@ -27,94 +34,106 @@ interface SourceGroupItem {
 	fmt: string;
 	group: string;
 	disabled?: boolean;
+	sourceType: ImportSourceType;
 }
 
+// Maps the visual source list to backend source_type. Most are real parsers
+// that may still raise NotImplementedError on the backend; manual_csv is the
+// one currently fully supported.
 const SOURCE_GROUPS: { label: string; items: SourceGroupItem[]; addLabel?: string }[] = [
 	{
 		label: "Rekening Bank",
 		items: [
-			{ id: "bca", name: "BCA", logo: "B", fmt: "PDF", group: "bank" },
-			{ id: "mandiri", name: "Mandiri", logo: "M", fmt: "PDF·CSV", group: "bank" },
-			{ id: "bri", name: "BRI", logo: "R", fmt: "PDF", group: "bank" },
-			{ id: "bni", name: "BNI", logo: "N", fmt: "PDF", group: "bank" },
+			{ id: "bca", name: "BCA", logo: "B", fmt: "PDF", group: "bank", sourceType: "pdf_bca" },
+			{ id: "mandiri", name: "Mandiri", logo: "M", fmt: "PDF", group: "bank", sourceType: "pdf_mandiri" },
+			{ id: "bri", name: "BRI", logo: "R", fmt: "PDF", group: "bank", sourceType: "pdf_bri" },
+			{ id: "bni", name: "BNI", logo: "N", fmt: "PDF", group: "bank", sourceType: "pdf_bca", disabled: true },
 		],
 		addLabel: "Tambah Bank Lain",
 	},
 	{
 		label: "E-Wallet",
 		items: [
-			{ id: "gopay", name: "GoPay", logo: "G", fmt: "PDF·IMG", group: "ewallet" },
-			{ id: "ovo", name: "OVO", logo: "O", fmt: "IMG", group: "ewallet" },
-			{ id: "dana", name: "Dana", logo: "D", fmt: "IMG", group: "ewallet" },
-			{ id: "shopeepay", name: "ShopeePay", logo: "S", fmt: "", group: "ewallet", disabled: true },
+			{ id: "gopay", name: "GoPay", logo: "G", fmt: "IMG", group: "ewallet", sourceType: "image_vision" },
+			{ id: "ovo", name: "OVO", logo: "O", fmt: "IMG", group: "ewallet", sourceType: "image_vision" },
+			{ id: "dana", name: "Dana", logo: "D", fmt: "IMG", group: "ewallet", sourceType: "image_vision" },
+			{ id: "shopeepay", name: "ShopeePay", logo: "S", fmt: "", group: "ewallet", disabled: true, sourceType: "image_vision" },
 		],
 	},
 	{
 		label: "Investasi",
 		items: [
-			{ id: "bibit", name: "Bibit", logo: "b", fmt: "IMG·CSV", group: "invest" },
-			{ id: "stockbit", name: "Stockbit", logo: "S", fmt: "IMG", group: "invest" },
-			{ id: "ipot", name: "IPOT", logo: "I", fmt: "CSV", group: "invest" },
-			{ id: "pluang", name: "Pluang", logo: "P", fmt: "IMG", group: "invest" },
+			{ id: "bibit", name: "Bibit", logo: "b", fmt: "CSV", group: "invest", sourceType: "csv_bibit" },
+			{ id: "stockbit", name: "Stockbit", logo: "S", fmt: "IMG", group: "invest", sourceType: "image_vision" },
+			{ id: "ipot", name: "IPOT", logo: "I", fmt: "CSV", group: "invest", sourceType: "csv_ipot" },
+			{ id: "pluang", name: "Pluang", logo: "P", fmt: "IMG", group: "invest", sourceType: "image_vision" },
 		],
 		addLabel: "Tambah Platform",
 	},
 	{
 		label: "Lainnya",
 		items: [
-			{ id: "manual", name: "Input Manual", logo: "+", fmt: "", group: "other" },
-			{ id: "csv", name: "Upload CSV", logo: "C", fmt: "CSV", group: "other" },
+			{ id: "csv", name: "Upload CSV", logo: "C", fmt: "CSV", group: "other", sourceType: "manual_csv" },
 		],
 	},
 ];
 
 const SOURCE_INSTRUCTIONS: Record<string, SourceInstructions> = {
 	bca: { title: "BCA", steps: ["Buka aplikasi BCA mobile dan masuk ke menu Info Saldo & Mutasi.", "Pilih rentang tanggal yang ingin di-import (maksimal 3 bulan terakhir).", "Tap Kirim ke Email, pilih format PDF.", "Buka email kamu, unduh attachment-nya, lalu upload di bawah ini."] },
-	mandiri: { title: "Mandiri", steps: ["Login ke Livin' by Mandiri.", "Buka e-Statement, pilih bulan yang ingin di-import.", "Download PDF / CSV, lalu upload di bawah."] },
+	mandiri: { title: "Mandiri", steps: ["Login ke Livin' by Mandiri.", "Buka e-Statement, pilih bulan yang ingin di-import.", "Download PDF, lalu upload di bawah."] },
 	bri: { title: "BRI", steps: ["Buka BRImo, masuk ke Mutasi, pilih periode, kirim ke email PDF.", "Upload file PDF di bawah."] },
 	bni: { title: "BNI", steps: ["Buka wondr by BNI, menu Mutasi Rekening, ekspor PDF.", "Upload file PDF di bawah."] },
-	gopay: { title: "GoPay", steps: ["Buka aplikasi Gojek, ke GoPay, tap Riwayat.", "Tap Unduh Riwayat, pilih periode, format PDF.", "Upload PDF, atau jika tidak bisa, screenshot riwayatnya."] },
+	gopay: { title: "GoPay", steps: ["Buka aplikasi Gojek, ke GoPay, tap Riwayat.", "Screenshot riwayat transaksi (multi-page OK).", "Upload screenshot di bawah — AI akan baca semuanya."] },
 	ovo: { title: "OVO", steps: ["Buka OVO, menu History.", "Screenshot tampilan riwayat (multiple OK).", "Upload screenshot di bawah — AI akan baca semuanya."] },
 	dana: { title: "Dana", steps: ["Buka DANA, menu History.", "Screenshot tampilan riwayat.", "Upload screenshot di bawah."] },
-	bibit: { title: "Bibit", steps: ["Buka Bibit, menu Portofolio.", "Screenshot atau export CSV transaksi (Pengaturan → Export Data).", "Upload file di bawah."] },
+	bibit: { title: "Bibit", steps: ["Buka Bibit, menu Portofolio.", "Export CSV transaksi (Pengaturan → Export Data).", "Upload file CSV di bawah."] },
 	stockbit: { title: "Stockbit", steps: ["Buka Stockbit, masuk ke tab Portfolio.", "Screenshot tampilan holdings (1 layar = 1 file).", "Upload semua screenshot di bawah."] },
 	ipot: { title: "IPOT", steps: ["Login IPOT (web), menu Portfolio → Export.", "Pilih format CSV.", "Upload CSV di bawah."] },
 	pluang: { title: "Pluang", steps: ["Buka Pluang, menu Portofolio.", "Screenshot tampilan emas / kripto kamu.", "Upload screenshot di bawah."] },
-	manual: { title: "Input Manual", steps: ["Tidak perlu upload — kamu akan diarahkan ke form input transaksi setelah klik Lanjutkan.", "Cocok untuk transaksi cash atau yang tidak ada di platform mana pun."] },
 	csv: { title: "CSV Custom", steps: ["Format CSV harus berisi minimal kolom: tanggal, deskripsi, jumlah.", "Tanggal: format YYYY-MM-DD. Jumlah: angka, negatif untuk pengeluaran.", "Upload CSV-nya di bawah — AI akan otomatis kategorikan."] },
 };
 
-const CATEGORIES = ["Makanan", "Transportasi", "Belanja", "Tagihan", "Hiburan", "Transfer", "Pendapatan", "Investasi", "Kesehatan", "Lainnya"];
-
-const REVIEW_DATA: ReviewRow[] = [
-	{ date: "28 Feb", merchant: "Gaji Februari", cat: "Pendapatan", amt: 12500000, conf: "ok" },
-	{ date: "27 Feb", merchant: "Indomaret Cipete", cat: "Belanja", amt: -87500, conf: "ok" },
-	{ date: "26 Feb", merchant: "Gojek (Ride)", cat: "Transportasi", amt: -32000, conf: "ok" },
-	{ date: "25 Feb", merchant: "Starbucks Senopati", cat: "Makanan", amt: -72000, conf: "ok" },
-	{ date: "24 Feb", merchant: "Tokopedia", cat: "Belanja", amt: -345000, conf: "ok" },
-	{ date: "23 Feb", merchant: "PLN Pasca Bayar", cat: "Tagihan", amt: -285000, conf: "ok" },
-	{ date: "21 Feb", merchant: "TRSF 000123 (?)", cat: "Transfer", amt: -1200000, conf: "warn" },
-	{ date: "20 Feb", merchant: "Grab Food", cat: "Makanan", amt: -58000, conf: "ok" },
-	{ date: "18 Feb", merchant: "QR-COMM Pasaraya", cat: "Belanja", amt: -156000, conf: "warn" },
-	{ date: "15 Feb", merchant: "Netflix", cat: "Hiburan", amt: -186000, conf: "ok" },
-	{ date: "12 Feb", merchant: "Spotify Premium", cat: "Hiburan", amt: -54990, conf: "ok" },
-	{ date: "09 Feb", merchant: "DEBIT ATM (?)", cat: "Transfer", amt: -200000, conf: "err" },
+const CATEGORIES = [
+	"Makanan",
+	"Transportasi",
+	"Belanja",
+	"Tagihan",
+	"Hiburan",
+	"Transfer",
+	"Pendapatan",
+	"Investasi",
+	"Kesehatan",
+	"Lainnya",
 ];
 
-const BANK_PILLS = ["BCA", "Mandiri", "BRI", "BNI", "CIMB Niaga", "Permata", "Jago"];
+const BANK_PILLS = ["BCA", "Mandiri", "BRI"];
 
 const STEPS = ["Upload", "Proses", "Review", "Selesai"];
 
-const PROC_STAGES = [
-	"Membaca dokumen…",
-	"Mengidentifikasi transaksi…",
-	"Mengklasifikasi dengan AI…",
-	"Memeriksa duplikat…",
-];
-
-function fmtRp(n: number): string {
+function fmtRp(amountStr: string): string {
+	const n = parseFloat(amountStr) || 0;
 	const abs = Math.abs(n).toLocaleString("id-ID");
 	return (n >= 0 ? "+Rp " : "−Rp ") + abs;
+}
+
+function formatShortDate(iso: string): string {
+	try {
+		return new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short" }).format(
+			new Date(iso),
+		);
+	} catch {
+		return iso;
+	}
+}
+
+type ConfBucket = "ok" | "warn" | "err";
+
+function bucketConfidence(score: string | number | null | undefined): ConfBucket {
+	const n = typeof score === "string" ? parseFloat(score) : (score ?? 0);
+	if (!Number.isFinite(n)) return "err";
+	if (n >= 0.8) return "ok";
+	if (n >= 0.5) return "warn";
+	return "err";
 }
 
 const fadeVariants = {
@@ -142,85 +161,93 @@ function MobileMenuButton() {
 }
 
 export default function ImportPage() {
+	const router = useRouter();
+	const queryClient = useQueryClient();
+
 	const [activeSource, setActiveSource] = useState("bca");
 	const [searchQuery, setSearchQuery] = useState("");
 	const [mobileShowContent, setMobileShowContent] = useState(false);
 	const [currentStep, setCurrentStep] = useState(1);
 	const [activePill, setActivePill] = useState("BCA");
 	const [dragOver, setDragOver] = useState(false);
-	const [fileName, setFileName] = useState("eStatement_BCA_Feb2026.pdf");
-	const [fileSize, setFileSize] = useState("2,4 MB · 14 halaman");
+	const [pendingFile, setPendingFile] = useState<File | null>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
-	const [procProgress, setProcProgress] = useState<number[]>([0, 0, 0, 0]);
-	const [procActive, setProcActive] = useState(-1);
-	const [procFound, setProcFound] = useState(0);
-	const procTimers = useRef<number[]>([]);
+	const [activeJobId, setActiveJobId] = useState<string | null>(null);
+	const [uploadError, setUploadError] = useState<string | null>(null);
+	const [confirmResult, setConfirmResult] = useState<{ created: number; existed: number } | null>(null);
 
-	const [reviewFilter, setReviewFilter] = useState<"all" | "ok" | "warn" | "err">("all");
-	const [alertOpen, setAlertOpen] = useState(false);
-	const [editingCell, setEditingCell] = useState<{ row: number; field: "merchant" | "cat" } | null>(null);
-	const [reviewData, setReviewData] = useState<ReviewRow[]>(REVIEW_DATA);
+	const [reviewFilter, setReviewFilter] = useState<"all" | ConfBucket>("all");
+	const [editingCell, setEditingCell] = useState<{ rowId: string; field: "merchant_name" | "category" } | null>(null);
 
-	const stopProcessing = useCallback(() => {
-		procTimers.current.forEach((t) => clearInterval(t));
-		procTimers.current = [];
-	}, []);
+	const allSourceItems = useMemo(() => SOURCE_GROUPS.flatMap((g) => g.items), []);
 
 	const goStep = useCallback((n: number) => {
 		setCurrentStep(n);
-		if (n !== 2) stopProcessing();
-	}, [stopProcessing]);
+	}, []);
 
-	useEffect(() => {
-		if (currentStep !== 2) return;
-		stopProcessing();
-		setProcProgress([0, 0, 0, 0]);
-		setProcActive(-1);
-		setProcFound(0);
-
-		const TARGET = 127;
-		const durations = [2400, 3000, 3800, 1400];
-		let stageIdx = 0;
-
-		function runStage(idx: number) {
-			if (idx >= 4) {
-				setProcFound(TARGET);
-				const t = window.setTimeout(() => goStep(3), 700);
-				procTimers.current.push(t);
-				return;
+	// Poll job until processing finishes.
+	const { data: job } = useQuery<ImportJobDetailResponse>({
+		queryKey: ["import-job", activeJobId],
+		queryFn: () => getImportJob(activeJobId!),
+		enabled: !!activeJobId,
+		refetchInterval: (q) => {
+			const status = q.state.data?.status;
+			if (status === "review" || status === "failed" || status === "confirmed" || status === "cancelled") {
+				return false;
 			}
-			setProcActive(idx);
-			let pct = 0;
-			const tick = 60;
-			const inc = 100 / (durations[idx] / tick);
-			const timer = window.setInterval(() => {
-				pct += inc + Math.random() * 1.4;
-				if (pct >= 100) {
-					pct = 100;
-					clearInterval(timer);
-					setProcProgress((prev) => { const n = [...prev]; n[idx] = 100; return n; });
-					setProcActive(-1);
-					stageIdx++;
-					runStage(stageIdx);
-				} else {
-					setProcProgress((prev) => { const n = [...prev]; n[idx] = pct; return n; });
-				}
-				const found = Math.min(TARGET, Math.floor(((idx + pct / 100) / 4) * TARGET));
-				setProcFound(found);
-			}, tick);
-			procTimers.current.push(timer);
-		}
+			return 1500;
+		},
+	});
 
-		runStage(0);
-		return stopProcessing;
-	}, [currentStep, goStep, stopProcessing]);
+	// Auto-advance from processing → review when backend finishes.
+	useEffect(() => {
+		if (job && currentStep === 2 && job.status === "review") {
+			setCurrentStep(3);
+		}
+	}, [job, currentStep]);
+
+	const uploadMutation = useMutation({
+		mutationFn: uploadImport,
+		onSuccess: (j) => {
+			setActiveJobId(j.id);
+			setUploadError(null);
+			goStep(2);
+		},
+		onError: (err) => {
+			setUploadError(getErrorMessage(err, "Upload gagal."));
+		},
+	});
+
+	const updateRowMutation = useMutation({
+		mutationFn: (args: { rowId: string; data: Parameters<typeof updateImportRow>[2] }) =>
+			updateImportRow(activeJobId!, args.rowId, args.data),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["import-job", activeJobId] });
+		},
+	});
+
+	const excludeRowMutation = useMutation({
+		mutationFn: (rowId: string) => excludeImportRow(activeJobId!, rowId),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["import-job", activeJobId] });
+		},
+	});
+
+	const confirmMutation = useMutation({
+		mutationFn: () => confirmImportJob(activeJobId!),
+		onSuccess: (r) => {
+			setConfirmResult({ created: r.transactions_created, existed: r.already_existed });
+			goStep(4);
+		},
+	});
 
 	const handleFile = (file: File) => {
-		setFileName(file.name || "eStatement_BCA_Feb2026.pdf");
-		const sizeMB = file.size ? (file.size / 1024 / 1024).toFixed(1) + " MB" : "2,4 MB";
-		setFileSize(sizeMB + " · estimasi 14 halaman");
-		goStep(2);
+		const item = allSourceItems.find((i) => i.id === activeSource);
+		if (!item) return;
+		setPendingFile(file);
+		setUploadError(null);
+		uploadMutation.mutate({ file, source_type: item.sourceType });
 	};
 
 	const handleDrop = (e: React.DragEvent) => {
@@ -233,36 +260,62 @@ export default function ImportPage() {
 	const handleSourceClick = (id: string) => {
 		setActiveSource(id);
 		setMobileShowContent(true);
+		// Reset wizard state when switching sources from the start.
+		setActiveJobId(null);
+		setPendingFile(null);
+		setConfirmResult(null);
+		setUploadError(null);
 		goStep(1);
 	};
 
 	const handlePillClick = (bank: string) => {
 		setActivePill(bank);
-		const allItems = SOURCE_GROUPS.flatMap((g) => g.items);
-		const found = allItems.find((i) => i.name.toLowerCase().includes(bank.toLowerCase()));
+		const found = allSourceItems.find((i) => i.name.toLowerCase().includes(bank.toLowerCase()));
 		if (found && !found.disabled) {
 			setActiveSource(found.id);
 		}
 	};
 
+	const restartWizard = () => {
+		setActiveJobId(null);
+		setPendingFile(null);
+		setConfirmResult(null);
+		setUploadError(null);
+		goStep(1);
+	};
+
 	const instructions = SOURCE_INSTRUCTIONS[activeSource];
+	const items = job?.items ?? [];
+	const filteredRows = reviewFilter === "all"
+		? items
+		: items.filter((r) => bucketConfidence(r.confidence_score) === reviewFilter);
 
-	const filteredReview = reviewFilter === "all" ? reviewData : reviewData.filter((r) => r.conf === reviewFilter);
-	const okCount = reviewData.filter((r) => r.conf === "ok").length;
-	const warnCount = reviewData.filter((r) => r.conf === "warn").length;
-	const errCount = reviewData.filter((r) => r.conf === "err").length;
+	const okCount = job?.rows_ok ?? 0;
+	const warnCount = job?.rows_warn ?? 0;
+	const errCount = job?.rows_err ?? 0;
+	const totalRows = job?.rows_total ?? 0;
+	const includedRows = items.filter((r) => !r.is_excluded).length;
 
-	const handleCellEdit = (rowIndex: number, field: "merchant" | "cat", value: string) => {
-		setReviewData((prev) => {
-			const next = [...prev];
-			const origIdx = reviewFilter === "all"
-				? rowIndex
-				: prev.indexOf(filteredReview[rowIndex]);
-			next[origIdx] = { ...next[origIdx], [field]: value };
-			return next;
+	const fileName = pendingFile?.name ?? job?.file_name ?? "(file)";
+	const fileSize = pendingFile
+		? `${(pendingFile.size / 1024 / 1024).toFixed(1)} MB`
+		: "";
+
+	const handleCellEdit = (row: ImportRowResponse, field: "merchant_name" | "category", value: string) => {
+		updateRowMutation.mutate({
+			rowId: row.id,
+			data: { [field]: value },
 		});
 		setEditingCell(null);
 	};
+
+	const processingStageLabel = (() => {
+		if (!job) return "Mengunggah file...";
+		if (job.status === "pending") return "Menunggu antrian...";
+		if (job.status === "processing") return "Memproses & klasifikasi AI...";
+		if (job.status === "failed") return "Gagal memproses.";
+		return "Memproses...";
+	})();
 
 	return (
 		<>
@@ -355,7 +408,6 @@ export default function ImportPage() {
 
 				{/* Right pane */}
 				<section className={cn("min-w-0 overflow-x-hidden", !mobileShowContent && "max-[880px]:hidden")}>
-					{/* Mobile back button */}
 					<button
 						type="button"
 						onClick={() => setMobileShowContent(false)}
@@ -364,6 +416,7 @@ export default function ImportPage() {
 						<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
 						Pilih sumber lain
 					</button>
+
 					{/* Stepper */}
 					<div className="flex flex-wrap items-center gap-2 px-4 pt-6 md:px-8 max-[880px]:px-5">
 						{STEPS.map((label, i) => {
@@ -413,9 +466,9 @@ export default function ImportPage() {
 											<h3 className="mb-3 text-[11px] font-medium uppercase tracking-labelWide text-gray-500">
 												Cara import dari {instructions.title}
 											</h3>
-											<ol className="m-0 list-none space-y-0 p-0" style={{ counterReset: "s" }}>
+											<ol className="m-0 list-none space-y-0 p-0">
 												{instructions.steps.map((step, i) => (
-													<li key={i} className="flex gap-3.5 py-2 text-[13px] leading-relaxed text-gray-700" style={{ counterIncrement: "s" }}>
+													<li key={i} className="flex gap-3.5 py-2 text-[13px] leading-relaxed text-gray-700">
 														<span className="min-w-[24px] font-mono text-[11px] font-medium tracking-[0.04em] text-gray-400">
 															{String(i + 1).padStart(2, "0")}
 														</span>
@@ -423,6 +476,12 @@ export default function ImportPage() {
 													</li>
 												))}
 											</ol>
+										</div>
+									)}
+
+									{uploadError && (
+										<div className="mb-4 border border-[#dc2626] bg-[#fdf6f6] px-4 py-3 text-[13px] text-[#dc2626]">
+											{uploadError}
 										</div>
 									)}
 
@@ -444,19 +503,14 @@ export default function ImportPage() {
 									>
 										<svg className="h-12 w-12 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
 										<div className="text-base font-medium text-gray-950">Seret file ke sini, atau klik untuk pilih</div>
-										<div className="font-mono text-xs tracking-[0.04em] text-gray-400">PDF &middot; PNG &middot; JPG &mdash; maks 10MB</div>
-										<div className="my-1 inline-flex items-center gap-2.5 text-[11px] font-medium uppercase tracking-labelWide text-gray-400">
-											<span className="h-px w-6 bg-gray-200" />atau<span className="h-px w-6 bg-gray-200" />
-										</div>
-										<button
-											type="button"
-											onClick={(e) => e.stopPropagation()}
-											className="inline-flex h-[38px] items-center gap-2 rounded-lg border border-gray-300 px-[18px] text-[13px] text-gray-700 transition-[background-color,border-color,color] duration-200 hover:border-gray-950 hover:bg-white hover:text-gray-950"
-										>
-											<svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" /><circle cx="12" cy="13" r="4" /></svg>
-											Ambil Foto
-										</button>
-										<input ref={fileInputRef} type="file" hidden accept=".pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+										<div className="font-mono text-xs tracking-[0.04em] text-gray-400">PDF · CSV · PNG · JPG — maks 10MB</div>
+										<input
+											ref={fileInputRef}
+											type="file"
+											hidden
+											accept=".pdf,.csv,image/*"
+											onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+										/>
 									</div>
 
 									{/* Bank pills */}
@@ -494,16 +548,15 @@ export default function ImportPage() {
 									{/* File card */}
 									<div className="mb-6 flex items-center gap-3.5 border border-gray-200 bg-white px-[18px] py-4">
 										<div className="relative grid h-12 w-10 place-items-center bg-gray-100 font-mono text-[11px] font-medium text-gray-700">
-											PDF
-											<span className="absolute right-0 top-0 border-[6px] border-white" style={{ borderBottomColor: "#d4d4d4", borderLeftColor: "#d4d4d4" }} />
+											FILE
 										</div>
 										<div className="min-w-0 flex-1">
 											<div className="truncate text-sm font-medium text-gray-950">{fileName}</div>
-											<div className="mt-0.5 font-mono text-xs text-gray-400">{fileSize}</div>
+											{fileSize && <div className="mt-0.5 font-mono text-xs text-gray-400">{fileSize}</div>}
 										</div>
 										<button
 											type="button"
-											onClick={() => goStep(1)}
+											onClick={restartWizard}
 											className="grid h-[30px] w-[30px] place-items-center rounded-md text-gray-400 transition-[background-color,color] duration-200 hover:bg-gray-100 hover:text-gray-950"
 											aria-label="Batal"
 										>
@@ -511,97 +564,72 @@ export default function ImportPage() {
 										</button>
 									</div>
 
-									{/* Processing stages */}
-									<div className="flex flex-col gap-[18px] border border-gray-200 p-6">
-										{PROC_STAGES.map((label, i) => {
-											const pct = procProgress[i];
-											const isOn = procActive === i;
-											const isDone = pct >= 100;
-											return (
-												<div key={i} className={cn("flex flex-col gap-2 transition-opacity duration-[350ms] ease-designhub", isOn ? "opacity-100" : isDone ? "opacity-60" : "opacity-40")}>
-													<div className="flex items-center justify-between text-[13px] text-gray-700">
-														<div className="flex items-center gap-2.5">
-															{isOn && (
-																<span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-gray-300 border-t-gray-950" />
-															)}
-															{isDone && (
-																<span className="inline-block text-xs font-semibold text-gray-950">&check;</span>
-															)}
-															{label}
-														</div>
-														<span className="font-mono text-xs tabular-nums text-gray-500">{Math.floor(pct)}%</span>
-													</div>
-													<div className="h-[3px] w-full overflow-hidden bg-gray-100">
-														<div className="h-full bg-gray-950 transition-[width] duration-[250ms] ease-linear" style={{ width: `${pct}%` }} />
-													</div>
-												</div>
-											);
-										})}
-
-										<div className="mt-[18px] flex flex-wrap items-center justify-between gap-3 text-[13px] text-gray-500">
-											<div>Menemukan <strong className="font-medium text-gray-950">{procFound}</strong> transaksi sejauh ini&hellip;</div>
-											<div className="font-mono text-xs text-gray-400">
-												{procFound >= 127 ? "Selesai · membuka review…" : "Selesai dalam ~15 detik"}
+									{job?.status === "failed" ? (
+										<div className="border border-[#dc2626] bg-[#fdf6f6] p-6">
+											<div className="mb-2 text-[13px] font-medium text-[#dc2626]">Gagal memproses file</div>
+											<div className="text-[13px] text-gray-700">
+												{job.error_message || "Parser belum tersedia untuk sumber ini, atau format file tidak didukung."}
+											</div>
+											<button
+												type="button"
+												onClick={restartWizard}
+												className="mt-4 inline-flex h-9 items-center rounded-lg border border-gray-300 px-4 text-[13px] font-medium text-gray-700 hover:border-gray-950 hover:bg-gray-50 hover:text-gray-950"
+											>
+												Coba lagi
+											</button>
+										</div>
+									) : (
+										<div className="border border-gray-200 p-6">
+											<div className="flex items-center gap-3 text-[13px] text-gray-700">
+												<span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-gray-300 border-t-gray-950" />
+												{processingStageLabel}
+											</div>
+											<div className="mt-4 font-mono text-xs text-gray-400">
+												Status: {job?.status ?? "uploading"}
 											</div>
 										</div>
-									</div>
+									)}
 								</motion.div>
 							)}
 
 							{/* Step 3: Review */}
-							{currentStep === 3 && (
+							{currentStep === 3 && job && (
 								<motion.div key="step3" variants={fadeVariants} initial="hidden" animate="show" exit="exit">
 									<h2 className="mb-1.5 font-serif text-[32px] font-normal leading-[1.1] tracking-tight2 text-gray-950">
 										Periksa hasil <em className="italic text-gray-700">ekstraksi</em>
 									</h2>
 									<p className="mb-7 max-w-[580px] text-sm text-gray-500">
-										AI berhasil membaca <strong className="text-gray-950">127 transaksi</strong>. Verifikasi data di bawah sebelum menyimpan. Klik cell mana pun untuk mengedit.
+										AI berhasil membaca <strong className="text-gray-950">{totalRows} transaksi</strong>. Verifikasi data di bawah sebelum menyimpan. Klik cell untuk mengedit.
 									</p>
 
 									{/* Summary cards */}
 									<div className="mb-6 grid grid-cols-3 border border-gray-200 max-[1100px]:grid-cols-1">
 										<div className="border-r border-gray-200 px-[22px] py-5 max-[1100px]:border-b max-[1100px]:border-r-0">
 											<div className="text-[11px] font-medium uppercase tracking-label text-gray-400">Transaksi</div>
-											<div className="mt-1.5 font-serif text-[32px] font-light leading-[1.1] tracking-tight2 text-gray-950">127</div>
-											<div className="mt-1 text-xs text-gray-500">14 halaman dokumen</div>
+											<div className="mt-1.5 font-serif text-[32px] font-light leading-[1.1] tracking-tight2 text-gray-950">{totalRows}</div>
+											<div className="mt-1 text-xs text-gray-500">{includedRows} disertakan</div>
 										</div>
 										<div className="border-r border-gray-200 px-[22px] py-5 max-[1100px]:border-b max-[1100px]:border-r-0">
-											<div className="text-[11px] font-medium uppercase tracking-label text-gray-400">Pemasukan</div>
-											<div className="mt-1.5 font-mono text-2xl font-medium tabular-nums tracking-tight2 text-gray-950">Rp 8.450.000</div>
-											<div className="mt-1 text-xs text-gray-500">23 transaksi</div>
+											<div className="text-[11px] font-medium uppercase tracking-label text-gray-400">Confidence Tinggi</div>
+											<div className="mt-1.5 font-mono text-2xl font-medium tabular-nums tracking-tight2 text-gray-950">{okCount}</div>
+											<div className="mt-1 text-xs text-gray-500">≥ 80% akurat</div>
 										</div>
 										<div className="px-[22px] py-5">
-											<div className="text-[11px] font-medium uppercase tracking-label text-gray-400">Pengeluaran</div>
-											<div className="mt-1.5 font-mono text-2xl font-medium tabular-nums tracking-tight2 text-gray-950">Rp 3.640.000</div>
-											<div className="mt-1 text-xs text-gray-500">104 transaksi</div>
+											<div className="text-[11px] font-medium uppercase tracking-label text-gray-400">Perlu Perhatian</div>
+											<div className="mt-1.5 font-mono text-2xl font-medium tabular-nums tracking-tight2 text-gray-950">{warnCount + errCount}</div>
+											<div className="mt-1 text-xs text-gray-500">{warnCount} ragu · {errCount} error</div>
 										</div>
 									</div>
-
-									{/* Alert bar */}
-									<button
-										type="button"
-										onClick={() => setAlertOpen(!alertOpen)}
-										className="mb-[18px] flex w-full items-center gap-3 border border-gray-300 bg-gray-50 px-4 py-3"
-									>
-										<svg className="h-4 w-4 shrink-0 text-[#d97706]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
-										<div className="flex-1 text-left text-[13px] font-medium text-gray-900">3 field perlu perhatian kamu</div>
-										<div className="font-mono text-xs text-gray-500">2 ragu &middot; 1 error</div>
-										<svg className={cn("h-3.5 w-3.5 text-gray-400 transition-transform duration-[250ms] ease-designhub", alertOpen && "rotate-180")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
-									</button>
-									{alertOpen && (
-										<div className="-mt-[18px] mb-[18px] border border-t-0 border-gray-300 bg-gray-50 px-4 pb-3.5 text-[13px] leading-relaxed text-gray-600">
-											<ul className="mt-2 space-y-1 pl-5">
-												<li><strong className="text-gray-950">21 Feb &middot; TRSF 000123</strong> &mdash; Merchant tidak dikenali. AI menebak &quot;Transfer ke teman&quot;.</li>
-												<li><strong className="text-gray-950">18 Feb &middot; QR-COMM</strong> &mdash; Kategori ambigu, bisa &quot;Makanan&quot; atau &quot;Belanja&quot;.</li>
-												<li><strong className="text-gray-950">09 Feb &middot; DEBIT ATM</strong> &mdash; Jumlah tidak terbaca dengan jelas (kemungkinan Rp 200.000 atau Rp 700.000).</li>
-											</ul>
-										</div>
-									)}
 
 									{/* Filter buttons */}
 									<div className="mb-2 flex flex-wrap items-center justify-between gap-3">
 										<div className="flex gap-1.5">
-											{([["all", "Semua", "127", ""] as const, ["ok", "Tinggi", String(okCount), "#16a34a"] as const, ["warn", "Ragu", String(warnCount), "#d97706"] as const, ["err", "Error", String(errCount), "#dc2626"] as const]).map(([key, label, count, color]) => (
+											{([
+												["all", "Semua", String(totalRows), ""] as const,
+												["ok", "Tinggi", String(okCount), "#16a34a"] as const,
+												["warn", "Ragu", String(warnCount), "#d97706"] as const,
+												["err", "Error", String(errCount), "#dc2626"] as const,
+											]).map(([key, label, count, color]) => (
 												<button
 													key={key}
 													type="button"
@@ -619,7 +647,7 @@ export default function ImportPage() {
 											))}
 										</div>
 										<div className="font-mono text-xs text-gray-400">
-											Menampilkan {filteredReview.length} dari 127 &middot; klik cell untuk edit
+											Menampilkan {filteredRows.length} dari {totalRows}
 										</div>
 									</div>
 
@@ -637,80 +665,85 @@ export default function ImportPage() {
 												</tr>
 											</thead>
 											<tbody>
-												{filteredReview.map((row, i) => {
-													const confLabel = row.conf === "ok" ? "Tinggi" : row.conf === "warn" ? "Ragu" : "Error";
-													const confColor = row.conf === "ok" ? "#16a34a" : row.conf === "warn" ? "#d97706" : "#dc2626";
+												{filteredRows.map((row) => {
+													const conf = bucketConfidence(row.confidence_score);
+													const confLabel = conf === "ok" ? "Tinggi" : conf === "warn" ? "Ragu" : "Error";
+													const confColor = conf === "ok" ? "#16a34a" : conf === "warn" ? "#d97706" : "#dc2626";
 													return (
 														<tr
-															key={`${row.date}-${row.merchant}-${i}`}
+															key={row.id}
 															className={cn(
 																"border-b border-gray-100 last:border-b-0",
-																row.conf === "warn" && "bg-[#fcfaf6]",
-																row.conf === "err" && "bg-[#fdf6f6]",
+																conf === "warn" && "bg-[#fcfaf6]",
+																conf === "err" && "bg-[#fdf6f6]",
+																row.is_excluded && "opacity-40",
 															)}
 														>
 															<td className="px-3.5 py-2.5">
-																<span className="font-mono text-xs text-gray-700 whitespace-nowrap">{row.date}</span>
+																<span className="font-mono text-xs text-gray-700 whitespace-nowrap">{formatShortDate(row.transaction_date)}</span>
 															</td>
 															<td className="px-3.5 py-2.5">
-																{editingCell?.row === i && editingCell.field === "merchant" ? (
+																{editingCell?.rowId === row.id && editingCell.field === "merchant_name" ? (
 																	<input
 																		type="text"
-																		defaultValue={row.merchant}
+																		defaultValue={row.merchant_name ?? ""}
 																		autoFocus
 																		className="w-full rounded border border-gray-950 bg-white px-2 py-1 text-[13px] text-gray-950 outline-none"
-																		onBlur={(e) => handleCellEdit(i, "merchant", e.target.value)}
+																		onBlur={(e) => handleCellEdit(row, "merchant_name", e.target.value)}
 																		onKeyDown={(e) => {
-																			if (e.key === "Enter") handleCellEdit(i, "merchant", (e.target as HTMLInputElement).value);
+																			if (e.key === "Enter") handleCellEdit(row, "merchant_name", (e.target as HTMLInputElement).value);
 																			if (e.key === "Escape") setEditingCell(null);
 																		}}
 																	/>
 																) : (
 																	<span
 																		className="inline-flex w-full cursor-text items-center gap-1.5 rounded px-2 py-1 text-[13px] transition-[background-color] duration-150 hover:bg-gray-100"
-																		onClick={() => setEditingCell({ row: i, field: "merchant" })}
+																		onClick={() => setEditingCell({ rowId: row.id, field: "merchant_name" })}
 																	>
-																		{row.merchant}
+																		{row.merchant_name || row.description || <span className="italic text-gray-400">tanpa nama</span>}
 																	</span>
 																)}
 															</td>
 															<td className="px-3.5 py-2.5">
-																{editingCell?.row === i && editingCell.field === "cat" ? (
+																{editingCell?.rowId === row.id && editingCell.field === "category" ? (
 																	<select
-																		defaultValue={row.cat}
+																		defaultValue={row.category ?? "Lainnya"}
 																		autoFocus
 																		className="rounded border border-gray-950 bg-white px-2 py-1 text-[13px] text-gray-950 outline-none"
-																		onChange={(e) => handleCellEdit(i, "cat", e.target.value)}
-																		onBlur={(e) => handleCellEdit(i, "cat", e.target.value)}
+																		onChange={(e) => handleCellEdit(row, "category", e.target.value)}
+																		onBlur={(e) => handleCellEdit(row, "category", e.target.value)}
 																	>
 																		{CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
 																	</select>
 																) : (
 																	<span
 																		className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-transparent bg-gray-100 px-2.5 py-0.5 text-[11px] font-medium capitalize text-gray-700 transition-[background-color] duration-150 hover:bg-gray-200"
-																		onClick={() => setEditingCell({ row: i, field: "cat" })}
+																		onClick={() => setEditingCell({ rowId: row.id, field: "category" })}
 																	>
-																		{row.cat}
+																		{row.category || "Lainnya"}
 																	</span>
 																)}
 															</td>
 															<td className="px-3.5 py-2.5 text-right">
-																<span className={cn("font-mono tabular-nums", row.amt >= 0 ? "font-medium text-gray-950" : "text-gray-700")}>
-																	{fmtRp(row.amt)}
+																<span className={cn("font-mono tabular-nums", parseFloat(row.amount) >= 0 ? "font-medium text-gray-950" : "text-gray-700")}>
+																	{fmtRp(row.amount)}
 																</span>
 															</td>
 															<td className="px-3.5 py-2.5">
-																<span className={cn("inline-flex items-center gap-2 font-mono text-[11px]", row.conf === "ok" ? "text-gray-700" : row.conf === "warn" ? "text-[#d97706]" : "text-[#dc2626]")}>
+																<span className={cn("inline-flex items-center gap-2 font-mono text-[11px]", conf === "ok" ? "text-gray-700" : conf === "warn" ? "text-[#d97706]" : "text-[#dc2626]")}>
 																	<span className="inline-block h-2 w-2 rounded-full" style={{ background: confColor }} />
 																	{confLabel}
 																</span>
 															</td>
 															<td className="px-3.5 py-2.5 text-right">
 																<div className="flex justify-end gap-1">
-																	<button type="button" className="grid h-[26px] w-[26px] place-items-center rounded-[5px] text-gray-400 transition-[background-color,color] duration-200 hover:bg-gray-100 hover:text-gray-950" title="Setujui">
-																		<svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-																	</button>
-																	<button type="button" className="grid h-[26px] w-[26px] place-items-center rounded-[5px] text-gray-400 transition-[background-color,color] duration-200 hover:bg-gray-100 hover:text-gray-950" title="Hapus">
+																	<button
+																		type="button"
+																		onClick={() => excludeRowMutation.mutate(row.id)}
+																		disabled={excludeRowMutation.isPending}
+																		className="grid h-[26px] w-[26px] place-items-center rounded-[5px] text-gray-400 transition-[background-color,color] duration-200 hover:bg-gray-100 hover:text-gray-950"
+																		title="Hapus dari import"
+																	>
 																		<svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-2 14a2 2 0 01-2 2H9a2 2 0 01-2-2L5 6" /></svg>
 																	</button>
 																</div>
@@ -725,26 +758,44 @@ export default function ImportPage() {
 									{/* Bulk action bar */}
 									<div className="sticky bottom-4 mt-6 flex flex-wrap items-center justify-between gap-3 border border-gray-200 bg-white px-5 py-4 shadow-[0_8px_30px_-16px_rgba(0,0,0,0.1)]">
 										<div className="flex flex-wrap items-center gap-3.5 text-[13px] text-gray-700">
-											<span className="grid h-[18px] w-[18px] place-items-center rounded-full bg-gray-950 text-[11px] text-white">&check;</span>
-											<strong className="font-medium text-gray-950">Semua terlihat benar</strong>
-											<span className="text-gray-400">&middot;</span>
-											<span>127 transaksi siap disimpan</span>
+											<span className="grid h-[18px] w-[18px] place-items-center rounded-full bg-gray-950 text-[11px] text-white">✓</span>
+											<strong className="font-medium text-gray-950">{includedRows} transaksi siap disimpan</strong>
+											{(items.length - includedRows) > 0 && (
+												<>
+													<span className="text-gray-400">·</span>
+													<span>{items.length - includedRows} dikecualikan</span>
+												</>
+											)}
 										</div>
 										<div className="flex gap-2">
-											<button type="button" onClick={() => goStep(1)} className="inline-flex h-10 items-center gap-2 rounded-lg border border-gray-300 px-[18px] text-sm font-medium text-gray-700 transition-[background-color,border-color,color] duration-200 hover:border-gray-950 hover:bg-gray-50 hover:text-gray-950">
-												Hapus semua
+											<button
+												type="button"
+												onClick={restartWizard}
+												className="inline-flex h-10 items-center gap-2 rounded-lg border border-gray-300 px-[18px] text-sm font-medium text-gray-700 transition-[background-color,border-color,color] duration-200 hover:border-gray-950 hover:bg-gray-50 hover:text-gray-950"
+											>
+												Batalkan
 											</button>
-											<button type="button" onClick={() => goStep(4)} className="inline-flex h-10 items-center gap-2 rounded-lg bg-gray-950 px-[18px] text-sm font-medium text-white transition-[background-color] duration-200 hover:bg-black">
-												Simpan 127 Transaksi
+											<button
+												type="button"
+												onClick={() => confirmMutation.mutate()}
+												disabled={confirmMutation.isPending || includedRows === 0}
+												className="inline-flex h-10 items-center gap-2 rounded-lg bg-gray-950 px-[18px] text-sm font-medium text-white transition-[background-color] duration-200 hover:bg-black disabled:opacity-50"
+											>
+												{confirmMutation.isPending ? "Menyimpan..." : `Simpan ${includedRows} Transaksi`}
 												<svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
 											</button>
 										</div>
 									</div>
+									{confirmMutation.isError && (
+										<div className="mt-3 border border-[#dc2626] bg-[#fdf6f6] px-4 py-2 text-[13px] text-[#dc2626]">
+											{getErrorMessage(confirmMutation.error, "Gagal konfirmasi.")}
+										</div>
+									)}
 								</motion.div>
 							)}
 
 							{/* Step 4: Done */}
-							{currentStep === 4 && (
+							{currentStep === 4 && confirmResult && (
 								<motion.div key="step4" variants={fadeVariants} initial="hidden" animate="show" exit="exit">
 									<div className="mx-auto mt-10 max-w-[560px] text-center">
 										<motion.div
@@ -763,26 +814,36 @@ export default function ImportPage() {
 											</svg>
 										</motion.div>
 										<h2 className="mb-2.5 font-serif text-4xl font-light leading-[1.1] tracking-tight2 text-gray-950">
-											127 transaksi berhasil <em className="italic">disimpan!</em>
+											{confirmResult.created} transaksi berhasil <em className="italic">disimpan!</em>
 										</h2>
 										<p className="mb-8 text-[15px] text-gray-500">
-											Net worth kamu telah diperbarui. Periode <strong className="text-gray-700">1 Feb &ndash; 28 Feb 2026</strong> dari rekening BCA Tahapan.
+											{confirmResult.existed > 0
+												? `${confirmResult.existed} transaksi duplikat dilewati. Net worth kamu telah diperbarui.`
+												: "Net worth kamu telah diperbarui."}
 										</p>
 
 										<div className="grid grid-cols-3 border border-gray-200 text-left max-[1100px]:grid-cols-1">
-											<a href="/dashboard" className="border-r border-gray-200 px-[22px] py-[22px] transition-[background-color] duration-200 ease-designhub hover:bg-gray-50 max-[1100px]:border-b max-[1100px]:border-r-0">
+											<button
+												type="button"
+												onClick={() => router.push("/transactions")}
+												className="border-r border-gray-200 px-[22px] py-[22px] text-left transition-[background-color] duration-200 ease-designhub hover:bg-gray-50 max-[1100px]:border-b max-[1100px]:border-r-0"
+											>
 												<div className="mb-3.5 text-gray-700">
 													<svg className="h-8 w-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="9" rx="1" /><rect x="14" y="3" width="7" height="5" rx="1" /><rect x="14" y="12" width="7" height="9" rx="1" /><rect x="3" y="16" width="7" height="5" rx="1" /></svg>
 												</div>
-												<div className="mb-1 text-sm font-medium text-gray-950">Lihat Dashboard</div>
-												<div className="text-xs leading-relaxed text-gray-500">Net worth, cash flow, dan portofolio kamu yang sudah update</div>
-											</a>
-											<button type="button" onClick={() => goStep(1)} className="border-r border-gray-200 px-[22px] py-[22px] text-left transition-[background-color] duration-200 ease-designhub hover:bg-gray-50 max-[1100px]:border-b max-[1100px]:border-r-0">
+												<div className="mb-1 text-sm font-medium text-gray-950">Lihat Transaksi</div>
+												<div className="text-xs leading-relaxed text-gray-500">Cek transaksi yang baru saja diimport</div>
+											</button>
+											<button
+												type="button"
+												onClick={restartWizard}
+												className="border-r border-gray-200 px-[22px] py-[22px] text-left transition-[background-color] duration-200 ease-designhub hover:bg-gray-50 max-[1100px]:border-b max-[1100px]:border-r-0"
+											>
 												<div className="mb-3.5 text-gray-700">
 													<svg className="h-8 w-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 4v12" /><path d="M7 9l5-5 5 5" /><path d="M5 20h14" /></svg>
 												</div>
 												<div className="mb-1 text-sm font-medium text-gray-950">Import Lagi</div>
-												<div className="text-xs leading-relaxed text-gray-500">Import dari rekening lain, e-wallet, atau platform investasi</div>
+												<div className="text-xs leading-relaxed text-gray-500">Import dari rekening lain atau platform investasi</div>
 											</button>
 											<a href="/chat" className="px-[22px] py-[22px] transition-[background-color] duration-200 ease-designhub hover:bg-gray-50">
 												<div className="mb-3.5 text-gray-700">

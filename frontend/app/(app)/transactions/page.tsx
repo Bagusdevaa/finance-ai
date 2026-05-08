@@ -2,8 +2,23 @@
 
 import { useMemo, useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Header } from "@/components/layout/Header";
-import { dummyTransactions as initialTransactions, type DummyTransactionFull } from "@/lib/dummy-data";
+import {
+	listTransactions,
+	createTransaction,
+	updateTransaction,
+	deleteTransaction,
+	type ListTransactionsParams,
+} from "@/lib/api/transactions";
+import { listAccounts } from "@/lib/api/accounts";
+import type {
+	TransactionResponse,
+	TransactionCreate,
+	TransactionUpdate,
+	AccountResponse,
+} from "@/lib/api/types";
+import { getErrorMessage } from "@/lib/api";
 import { formatRupiah } from "@/lib/formatRupiah";
 import { cn } from "@/lib/cn";
 
@@ -12,37 +27,103 @@ const easeDesignhub = [0.2, 0.7, 0.2, 1] as const;
 type TypeFilter = "all" | "in" | "out";
 
 const CATEGORIES = ["Semua kategori", "Pemasukan", "Makan & Minum", "Belanja", "Transportasi", "Tagihan", "Investasi", "Hiburan"];
-const ACCOUNTS = ["Semua akun", "BCA", "Mandiri", "GoPay", "OVO", "Stockbit", "Bibit"];
+const ALL_ACCOUNTS_LABEL = "Semua akun";
+
+function toNumber(s: string | null | undefined): number {
+	if (!s) return 0;
+	const n = parseFloat(s);
+	return Number.isFinite(n) ? n : 0;
+}
 
 export default function TransactionsPage() {
-	const [transactions, setTransactions] = useState<DummyTransactionFull[]>(initialTransactions);
+	const queryClient = useQueryClient();
 	const [search, setSearch] = useState("");
+	const [debouncedSearch, setDebouncedSearch] = useState("");
 	const [type, setType] = useState<TypeFilter>("all");
 	const [category, setCategory] = useState(CATEGORIES[0]);
-	const [account, setAccount] = useState(ACCOUNTS[0]);
+	const [accountLabel, setAccountLabel] = useState(ALL_ACCOUNTS_LABEL);
 	const [openCat, setOpenCat] = useState(false);
 	const [openAcc, setOpenAcc] = useState(false);
-	const [selected, setSelected] = useState<DummyTransactionFull | null>(null);
+	const [selected, setSelected] = useState<TransactionResponse | null>(null);
 	const [showFilters, setShowFilters] = useState(true);
 	const [showAddModal, setShowAddModal] = useState(false);
 
-	const filtered = useMemo(() => {
-		const q = search.toLowerCase();
-		return transactions.filter((t) => {
-			if (q && !`${t.merchant_name} ${t.description}`.toLowerCase().includes(q)) return false;
-			if (type === "in" && t.amount < 0) return false;
-			if (type === "out" && t.amount > 0) return false;
-			if (category !== CATEGORIES[0] && t.category !== category) return false;
-			if (account !== ACCOUNTS[0] && !t.account.startsWith(account)) return false;
-			return true;
-		});
-	}, [search, type, category, account, transactions]);
+	// Debounce search input → API param
+	useEffect(() => {
+		const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+		return () => clearTimeout(t);
+	}, [search]);
+
+	const { data: accounts } = useQuery({
+		queryKey: ["accounts"],
+		queryFn: listAccounts,
+	});
+
+	const accountOptions = useMemo(
+		() => [ALL_ACCOUNTS_LABEL, ...(accounts?.map((a) => a.name) ?? [])],
+		[accounts],
+	);
+	const accountByName = useMemo(() => {
+		const m = new Map<string, AccountResponse>();
+		for (const a of accounts ?? []) m.set(a.name, a);
+		return m;
+	}, [accounts]);
+
+	const filterParams = useMemo<ListTransactionsParams>(() => {
+		const p: ListTransactionsParams = { limit: 50 };
+		if (debouncedSearch) p.search = debouncedSearch;
+		if (type !== "all") p.type = type;
+		if (category !== CATEGORIES[0]) p.category = category;
+		const acc = accountByName.get(accountLabel);
+		if (acc) p.account_id = acc.id;
+		return p;
+	}, [debouncedSearch, type, category, accountLabel, accountByName]);
+
+	const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
+		queryKey: ["transactions", filterParams],
+		queryFn: ({ pageParam }) => listTransactions({ ...filterParams, cursor: pageParam }),
+		initialPageParam: undefined as string | undefined,
+		getNextPageParam: (last) => last.next_cursor ?? undefined,
+	});
+
+	const transactions = useMemo(() => data?.pages.flatMap((p) => p.items) ?? [], [data]);
+
+	const createMutation = useMutation({
+		mutationFn: (payload: TransactionCreate) => createTransaction(payload),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["transactions"] });
+			setShowAddModal(false);
+		},
+	});
+
+	const updateMutation = useMutation({
+		mutationFn: ({ id, data }: { id: string; data: TransactionUpdate }) => updateTransaction(id, data),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["transactions"] });
+			setSelected(null);
+		},
+	});
+
+	const deleteMutation = useMutation({
+		mutationFn: (id: string) => deleteTransaction(id),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["transactions"] });
+			setSelected(null);
+		},
+	});
 
 	const handleExport = () => {
 		const header = "Date,Merchant,Category,Account,Amount,Description";
-		const rows = filtered.map((t) => {
+		const rows = transactions.map((t) => {
 			const escapeCsv = (s: string) => `"${s.replace(/"/g, '""')}"`;
-			return [t.date, escapeCsv(t.merchant_name), escapeCsv(t.category), escapeCsv(t.account), t.amount, escapeCsv(t.description)].join(",");
+			return [
+				t.transaction_date,
+				escapeCsv(t.merchant_name ?? ""),
+				escapeCsv(t.category ?? ""),
+				escapeCsv(t.account?.name ?? ""),
+				t.amount,
+				escapeCsv(t.description ?? ""),
+			].join(",");
 		});
 		const csv = [header, ...rows].join("\n");
 		const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -53,11 +134,6 @@ export default function TransactionsPage() {
 		a.download = `transaksi-export-${today}.csv`;
 		a.click();
 		URL.revokeObjectURL(url);
-	};
-
-	const handleAddTransaction = (tx: DummyTransactionFull) => {
-		setTransactions((prev) => [tx, ...prev]);
-		setShowAddModal(false);
 	};
 
 	return (
@@ -122,30 +198,18 @@ export default function TransactionsPage() {
 					/>
 					<Dropdown
 						label="Akun"
-						value={account}
+						value={accountLabel}
 						open={openAcc}
 						onOpenChange={(v) => {
 							setOpenAcc(v);
 							if (v) setOpenCat(false);
 						}}
-						options={ACCOUNTS}
-						onSelect={setAccount}
+						options={accountOptions}
+						onSelect={setAccountLabel}
 					/>
-					<button
-						type="button"
-						className="inline-flex h-9 items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 text-[13px] text-gray-700 transition-[border-color,color] duration-200 ease-designhub hover:border-gray-950 hover:text-gray-950"
-					>
-						<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="text-gray-500">
-							<rect x="3" y="4" width="18" height="18" rx="2" />
-							<line x1="16" y1="2" x2="16" y2="6" />
-							<line x1="8" y1="2" x2="8" y2="6" />
-							<line x1="3" y1="10" x2="21" y2="10" />
-						</svg>
-						<span className="font-medium text-gray-950">1 – 28 Apr 2026</span>
-					</button>
 					<TypeSegment value={type} onChange={setType} />
 					<div className="ml-auto font-mono text-xs text-gray-400">
-						{search ? `${filtered.length} ditemukan` : `${transactions.length} transaksi`}
+						{isLoading ? "Memuat..." : `${transactions.length} transaksi`}
 					</div>
 				</div>
 				</motion.div>
@@ -165,13 +229,20 @@ export default function TransactionsPage() {
 							</tr>
 						</thead>
 						<tbody>
-							{groupByDate(filtered).map(({ date, items }) => (
+							{groupByDate(transactions).map(({ date, items }) => (
 								<DateGroup key={date} date={date} items={items} onSelect={setSelected} />
 							))}
-							{filtered.length === 0 && (
+							{!isLoading && transactions.length === 0 && (
 								<tr>
 									<td colSpan={5} className="px-4 py-16 text-center text-sm text-gray-500">
 										Tidak ada transaksi yang cocok.
+									</td>
+								</tr>
+							)}
+							{isLoading && (
+								<tr>
+									<td colSpan={5} className="px-4 py-16 text-center text-sm text-gray-500">
+										Memuat...
 									</td>
 								</tr>
 							)}
@@ -179,29 +250,21 @@ export default function TransactionsPage() {
 					</table>
 				</div>
 
-				{/* PAGINATION */}
+				{/* LOAD MORE */}
 				<div className="flex flex-wrap items-center justify-between gap-2.5 py-5 font-mono text-xs text-gray-500">
 					<div>
-						Menampilkan <strong className="text-gray-950">1–{filtered.length}</strong> dari{" "}
-						<strong className="text-gray-950">{transactions.length}</strong> transaksi
+						Menampilkan <strong className="text-gray-950">{transactions.length}</strong> transaksi
 					</div>
-					<div className="flex items-center gap-1.5">
-						<PgBtn disabled>
-							<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-								<polyline points="15 18 9 12 15 6" />
-							</svg>
-						</PgBtn>
-						<PgBtn active>1</PgBtn>
-						<PgBtn>2</PgBtn>
-						<PgBtn>3</PgBtn>
-						<span className="px-1 text-gray-400">…</span>
-						<PgBtn>9</PgBtn>
-						<PgBtn>
-							<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-								<polyline points="9 18 15 12 9 6" />
-							</svg>
-						</PgBtn>
-					</div>
+					{hasNextPage && (
+						<button
+							type="button"
+							onClick={() => fetchNextPage()}
+							disabled={isFetchingNextPage}
+							className="inline-flex h-9 items-center gap-2 rounded-lg border border-gray-300 bg-white px-3.5 text-[13px] font-medium text-gray-700 transition-[border-color,color] duration-200 ease-designhub hover:border-gray-950 hover:text-gray-950 disabled:cursor-not-allowed disabled:opacity-40"
+						>
+							{isFetchingNextPage ? "Memuat..." : "Muat lebih banyak"}
+						</button>
+					)}
 				</div>
 			</div>
 
@@ -219,13 +282,31 @@ export default function TransactionsPage() {
 			</button>
 
 			{/* SIDE PANEL */}
-			<TxSidePanel tx={selected} onClose={() => setSelected(null)} />
+			<TxSidePanel
+				tx={selected}
+				accounts={accounts ?? []}
+				onClose={() => setSelected(null)}
+				onSave={(id, data) => updateMutation.mutate({ id, data })}
+				onDelete={(id) => deleteMutation.mutate(id)}
+				saving={updateMutation.isPending}
+				deleting={deleteMutation.isPending}
+				error={
+					updateMutation.error
+						? getErrorMessage(updateMutation.error, "Gagal menyimpan")
+						: deleteMutation.error
+							? getErrorMessage(deleteMutation.error, "Gagal menghapus")
+							: null
+				}
+			/>
 
 			{/* ADD TRANSACTION MODAL */}
 			<AddTransactionModal
 				open={showAddModal}
 				onClose={() => setShowAddModal(false)}
-				onAdd={handleAddTransaction}
+				accounts={accounts ?? []}
+				onSubmit={(payload) => createMutation.mutate(payload)}
+				submitting={createMutation.isPending}
+				error={createMutation.error ? getErrorMessage(createMutation.error, "Gagal menyimpan") : null}
 			/>
 		</>
 	);
@@ -329,24 +410,6 @@ function TypeSegment({ value, onChange }: { value: TypeFilter; onChange: (v: Typ
 	);
 }
 
-function PgBtn({ children, active, disabled }: { children: React.ReactNode; active?: boolean; disabled?: boolean }) {
-	return (
-		<button
-			type="button"
-			disabled={disabled}
-			className={cn(
-				"grid h-[30px] w-[30px] place-items-center rounded-md border text-[12px] transition-[background-color,border-color,color] duration-200 ease-designhub",
-				active
-					? "border-gray-950 bg-gray-950 text-white"
-					: "border-gray-200 bg-white text-gray-500 hover:border-gray-950 hover:text-gray-950",
-				disabled && "cursor-not-allowed opacity-40",
-			)}
-		>
-			{children}
-		</button>
-	);
-}
-
 function Th({ children, align = "left" }: { children: React.ReactNode; align?: "left" | "right" }) {
 	return (
 		<th
@@ -360,13 +423,13 @@ function Th({ children, align = "left" }: { children: React.ReactNode; align?: "
 	);
 }
 
-function groupByDate(items: DummyTransactionFull[]): { date: string; items: DummyTransactionFull[] }[] {
-	const groups = new Map<string, DummyTransactionFull[]>();
+function groupByDate(items: TransactionResponse[]): { date: string; items: TransactionResponse[] }[] {
+	const groups = new Map<string, TransactionResponse[]>();
 	for (const t of items) {
-		if (!groups.has(t.date)) groups.set(t.date, []);
-		groups.get(t.date)!.push(t);
+		const key = t.transaction_date;
+		if (!groups.has(key)) groups.set(key, []);
+		groups.get(key)!.push(t);
 	}
-	// Sort dates desc
 	return Array.from(groups.entries())
 		.sort(([a], [b]) => (a < b ? 1 : -1))
 		.map(([date, items]) => ({ date, items }));
@@ -378,8 +441,8 @@ function DateGroup({
 	onSelect,
 }: {
 	date: string;
-	items: DummyTransactionFull[];
-	onSelect: (t: DummyTransactionFull) => void;
+	items: TransactionResponse[];
+	onSelect: (t: TransactionResponse) => void;
 }) {
 	const formatted = new Intl.DateTimeFormat("id-ID", {
 		day: "numeric",
@@ -401,8 +464,9 @@ function DateGroup({
 	);
 }
 
-function TxRow({ t, onSelect }: { t: DummyTransactionFull; onSelect: (t: DummyTransactionFull) => void }) {
-	const time = t.time ?? new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short" }).format(new Date(t.date));
+function TxRow({ t, onSelect }: { t: TransactionResponse; onSelect: (t: TransactionResponse) => void }) {
+	const amt = toNumber(t.amount);
+	const time = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short" }).format(new Date(t.transaction_date));
 	return (
 		<tr
 			onClick={() => onSelect(t)}
@@ -412,8 +476,10 @@ function TxRow({ t, onSelect }: { t: DummyTransactionFull; onSelect: (t: DummyTr
 				<span className="whitespace-nowrap font-mono text-xs text-gray-700">{time}</span>
 			</td>
 			<td className="px-4 py-3.5 align-middle">
-				<div className="font-medium text-gray-950">{t.merchant_name}</div>
-				<div className="mt-0.5 font-mono text-[11px] text-gray-400">{t.description}</div>
+				<div className="font-medium text-gray-950">{t.merchant_name || t.description || "Tanpa nama"}</div>
+				{t.description && t.merchant_name && (
+					<div className="mt-0.5 font-mono text-[11px] text-gray-400">{t.description}</div>
+				)}
 			</td>
 			<td className="px-4 py-3.5 align-middle">
 				<button
@@ -421,21 +487,21 @@ function TxRow({ t, onSelect }: { t: DummyTransactionFull; onSelect: (t: DummyTr
 					className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-2.5 py-1 text-[11px] font-medium text-gray-700 transition-colors duration-150 hover:bg-gray-200"
 					onClick={(e) => e.stopPropagation()}
 				>
-					{t.category}
+					{t.category || "Lainnya"}
 				</button>
 			</td>
 			<td className="px-4 py-3.5 align-middle">
-				<span className="font-mono text-xs text-gray-500">{t.account}</span>
+				<span className="font-mono text-xs text-gray-500">{t.account?.name ?? "—"}</span>
 			</td>
 			<td className="px-4 py-3.5 text-right align-middle">
 				<span
 					className={cn(
 						"font-mono text-[13px] font-medium tabular-nums",
-						t.amount > 0 ? "text-gray-950" : "text-gray-700",
+						amt > 0 ? "text-gray-950" : "text-gray-700",
 					)}
 				>
-					{t.amount > 0 ? "+ " : "− "}
-					{formatRupiah(Math.abs(t.amount))}
+					{amt > 0 ? "+ " : "− "}
+					{formatRupiah(Math.abs(amt))}
 				</span>
 			</td>
 		</tr>
@@ -446,7 +512,25 @@ function TxRow({ t, onSelect }: { t: DummyTransactionFull; onSelect: (t: DummyTr
 // Side panel
 // =============================================================================
 
-function TxSidePanel({ tx, onClose }: { tx: DummyTransactionFull | null; onClose: () => void }) {
+function TxSidePanel({
+	tx,
+	accounts,
+	onClose,
+	onSave,
+	onDelete,
+	saving,
+	deleting,
+	error,
+}: {
+	tx: TransactionResponse | null;
+	accounts: AccountResponse[];
+	onClose: () => void;
+	onSave: (id: string, data: TransactionUpdate) => void;
+	onDelete: (id: string) => void;
+	saving: boolean;
+	deleting: boolean;
+	error: string | null;
+}) {
 	const open = Boolean(tx);
 	return (
 		<>
@@ -469,25 +553,59 @@ function TxSidePanel({ tx, onClose }: { tx: DummyTransactionFull | null; onClose
 				transition={{ duration: 0.35, ease: easeDesignhub }}
 				className="fixed right-0 top-0 z-[40] flex h-screen w-[440px] max-w-[92vw] flex-col border-l border-gray-200 bg-white shadow-[-20px_0_60px_-20px_rgba(0,0,0,0.2)]"
 			>
-				{tx && <TxSidePanelInner tx={tx} onClose={onClose} />}
+				{tx && (
+					<TxSidePanelInner
+						tx={tx}
+						accounts={accounts}
+						onClose={onClose}
+						onSave={onSave}
+						onDelete={onDelete}
+						saving={saving}
+						deleting={deleting}
+						error={error}
+					/>
+				)}
 			</motion.aside>
 		</>
 	);
 }
 
-function TxSidePanelInner({ tx, onClose }: { tx: DummyTransactionFull; onClose: () => void }) {
-	const dateLabel = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "long", year: "numeric" }).format(new Date(tx.date));
-	const time = tx.time ?? "—";
+function TxSidePanelInner({
+	tx,
+	accounts,
+	onClose,
+	onSave,
+	onDelete,
+	saving,
+	deleting,
+	error,
+}: {
+	tx: TransactionResponse;
+	accounts: AccountResponse[];
+	onClose: () => void;
+	onSave: (id: string, data: TransactionUpdate) => void;
+	onDelete: (id: string) => void;
+	saving: boolean;
+	deleting: boolean;
+	error: string | null;
+}) {
+	const amt = toNumber(tx.amount);
+	const dateLabel = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "long", year: "numeric" }).format(new Date(tx.transaction_date));
+	const [note, setNote] = useState(tx.note ?? "");
+
+	useEffect(() => {
+		setNote(tx.note ?? "");
+	}, [tx.id, tx.note]);
 
 	return (
 		<>
 			<div className="flex justify-between gap-3 border-b border-gray-200 px-6 py-5">
 				<div>
 					<div className="font-serif text-[42px] font-light leading-none tracking-tight2 tabular-nums text-gray-950">
-						{tx.amount > 0 ? "+" : "−"}
-						{formatRupiah(Math.abs(tx.amount))}
+						{amt > 0 ? "+" : "−"}
+						{formatRupiah(Math.abs(amt))}
 					</div>
-					<div className="mt-1.5 text-sm text-gray-700">{tx.merchant_name}</div>
+					<div className="mt-1.5 text-sm text-gray-700">{tx.merchant_name || tx.description || "Tanpa nama"}</div>
 				</div>
 				<button
 					type="button"
@@ -501,40 +619,56 @@ function TxSidePanelInner({ tx, onClose }: { tx: DummyTransactionFull; onClose: 
 				</button>
 			</div>
 			<div className="flex-1 overflow-y-auto px-6 py-5">
-				<PRow label="Tanggal" value={`${dateLabel} · ${time}`} />
-				<PRow label="Akun" value={tx.account} />
+				<PRow label="Tanggal" value={dateLabel} />
+				<PRow label="Akun" value={tx.account?.name ?? "—"} />
 				<PRow
 					label="Kategori"
 					value={
 						<span className="rounded-full bg-gray-100 px-2.5 py-1 text-[11px] font-medium text-gray-700">
-							{tx.category}
+							{tx.category || "Lainnya"}
 						</span>
 					}
 				/>
-				<PRow label="Tipe" value={tx.amount > 0 ? "Pemasukan" : "Pengeluaran"} />
-				<PRow label="Referensi" value={<span className="text-xs">{tx.id.toUpperCase()}</span>} />
+				<PRow label="Tipe" value={amt > 0 ? "Pemasukan" : "Pengeluaran"} />
+				<PRow label="Sumber" value={<span className="text-xs">{tx.source}</span>} />
+				<PRow label="Referensi" value={<span className="text-xs">{tx.id.slice(0, 8).toUpperCase()}</span>} />
 				<h3 className="mb-2.5 mt-4 text-[11px] font-medium uppercase tracking-labelWide text-gray-500">
 					Catatan
 				</h3>
 				<textarea
+					value={note}
+					onChange={(e) => setNote(e.target.value)}
 					placeholder="Tambahkan catatan..."
 					className="min-h-[60px] w-full resize-y border border-gray-200 p-2.5 text-[13px] outline-none transition-colors focus:border-gray-950"
 				/>
-				<h3 className="mb-2.5 mt-4 text-[11px] font-medium uppercase tracking-labelWide text-gray-500">
-					Riwayat di merchant ini
-				</h3>
-				<PRow label="21 Apr · Indomaret" value="−Rp 64.000" mono />
-				<PRow label="14 Apr · Indomaret" value="−Rp 122.500" mono />
-				<PRow label="Total bulan ini" value="−Rp 319.000 · 4×" mono noBorder />
+				{error && (
+					<div className="mt-3 border border-gray-300 bg-gray-50 px-3 py-2 text-xs text-gray-700">
+						{error}
+					</div>
+				)}
 			</div>
 			<div className="flex gap-2 border-t border-gray-200 px-6 py-4">
-				<button className="flex-1 rounded-lg border border-gray-300 px-3.5 py-2 text-[13px] font-medium text-gray-700 transition-colors hover:border-gray-950 hover:text-gray-950">
-					Hapus
+				<button
+					type="button"
+					onClick={() => {
+						if (confirm("Hapus transaksi ini?")) onDelete(tx.id);
+					}}
+					disabled={deleting || saving}
+					className="flex-1 rounded-lg border border-gray-300 px-3.5 py-2 text-[13px] font-medium text-gray-700 transition-colors hover:border-gray-950 hover:text-gray-950 disabled:cursor-not-allowed disabled:opacity-40"
+				>
+					{deleting ? "Menghapus..." : "Hapus"}
 				</button>
-				<button className="flex-1 rounded-lg bg-gray-950 px-3.5 py-2 text-[13px] font-medium text-white transition-colors hover:bg-black">
-					Simpan
+				<button
+					type="button"
+					onClick={() => onSave(tx.id, { note: note || null })}
+					disabled={saving || deleting}
+					className="flex-1 rounded-lg bg-gray-950 px-3.5 py-2 text-[13px] font-medium text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-40"
+				>
+					{saving ? "Menyimpan..." : "Simpan"}
 				</button>
 			</div>
+			{/* keep accounts referenced to avoid unused-var error in case of future select */}
+			<span hidden>{accounts.length}</span>
 		</>
 	);
 }
@@ -568,23 +702,28 @@ function PRow({
 // =============================================================================
 
 const ADD_CATEGORIES = CATEGORIES.filter((c) => c !== "Semua kategori");
-const ADD_ACCOUNTS = ACCOUNTS.filter((a) => a !== "Semua akun");
 
 function AddTransactionModal({
 	open,
 	onClose,
-	onAdd,
+	accounts,
+	onSubmit,
+	submitting,
+	error,
 }: {
 	open: boolean;
 	onClose: () => void;
-	onAdd: (tx: DummyTransactionFull) => void;
+	accounts: AccountResponse[];
+	onSubmit: (payload: TransactionCreate) => void;
+	submitting: boolean;
+	error: string | null;
 }) {
 	const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
 	const [merchant, setMerchant] = useState("");
 	const [amountStr, setAmountStr] = useState("");
 	const [isExpense, setIsExpense] = useState(true);
 	const [cat, setCat] = useState(ADD_CATEGORIES[0]);
-	const [acc, setAcc] = useState(ADD_ACCOUNTS[0]);
+	const [accId, setAccId] = useState<string>("");
 	const [desc, setDesc] = useState("");
 
 	useEffect(() => {
@@ -594,10 +733,10 @@ function AddTransactionModal({
 			setAmountStr("");
 			setIsExpense(true);
 			setCat(ADD_CATEGORIES[0]);
-			setAcc(ADD_ACCOUNTS[0]);
+			setAccId(accounts[0]?.id ?? "");
 			setDesc("");
 		}
-	}, [open]);
+	}, [open, accounts]);
 
 	useEffect(() => {
 		if (!open) return;
@@ -611,18 +750,16 @@ function AddTransactionModal({
 	const handleSubmit = () => {
 		const rawAmount = parseFloat(amountStr.replace(/\./g, "").replace(",", "."));
 		if (!merchant.trim() || isNaN(rawAmount) || rawAmount <= 0) return;
-		const amount = isExpense ? -rawAmount : rawAmount;
-		const tx: DummyTransactionFull = {
-			id: `txn-manual-${Date.now()}`,
-			date,
-			description: desc || merchant,
-			merchant_name: merchant,
-			account: acc,
+		const signed = isExpense ? -rawAmount : rawAmount;
+		const payload: TransactionCreate = {
+			account_id: accId || null,
+			amount: signed.toFixed(2),
+			merchant_name: merchant.trim(),
+			description: desc.trim() || null,
 			category: cat,
-			amount,
-			confidence_score: 1.0,
+			transaction_date: date,
 		};
-		onAdd(tx);
+		onSubmit(payload);
 	};
 
 	return (
@@ -715,12 +852,13 @@ function AddTransactionModal({
 								</ModalField>
 								<ModalField label="Akun">
 									<select
-										value={acc}
-										onChange={(e) => setAcc(e.target.value)}
+										value={accId}
+										onChange={(e) => setAccId(e.target.value)}
 										className="h-9 w-full border border-gray-200 bg-gray-50 px-2 text-[13px] text-gray-950 outline-none transition-colors focus:border-gray-950 focus:bg-white"
 									>
-										{ADD_ACCOUNTS.map((a) => (
-											<option key={a} value={a}>{a}</option>
+										<option value="">— Pilih akun —</option>
+										{accounts.map((a) => (
+											<option key={a.id} value={a.id}>{a.name}</option>
 										))}
 									</select>
 								</ModalField>
@@ -734,6 +872,11 @@ function AddTransactionModal({
 									className="h-9 w-full border border-gray-200 bg-gray-50 px-3 text-[13px] text-gray-950 outline-none transition-colors placeholder:text-gray-400 focus:border-gray-950 focus:bg-white"
 								/>
 							</ModalField>
+							{error && (
+								<div className="border border-gray-300 bg-gray-50 px-3 py-2 text-xs text-gray-700">
+									{error}
+								</div>
+							)}
 						</div>
 						<div className="flex gap-2 border-t border-gray-200 px-6 py-4">
 							<button
@@ -746,10 +889,10 @@ function AddTransactionModal({
 							<button
 								type="button"
 								onClick={handleSubmit}
-								disabled={!merchant.trim() || !amountStr.trim()}
+								disabled={!merchant.trim() || !amountStr.trim() || submitting}
 								className="flex-1 rounded-lg bg-gray-950 px-3.5 py-2.5 text-[13px] font-medium text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-40"
 							>
-								Simpan
+								{submitting ? "Menyimpan..." : "Simpan"}
 							</button>
 						</div>
 					</motion.div>

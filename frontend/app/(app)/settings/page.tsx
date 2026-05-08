@@ -4,6 +4,8 @@ import { useState, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useSidebar } from "@/components/layout/Sidebar";
 import { cn } from "@/lib/cn";
+import { useAuthStore } from "@/lib/auth-store";
+import { logout } from "@/lib/api/auth";
 
 const easeDesignhub = [0.2, 0.7, 0.2, 1] as const;
 
@@ -147,6 +149,17 @@ export default function SettingsPage() {
 	const [theme, setTheme] = useState("light");
 	const [showModal, setShowModal] = useState(false);
 	const [confirmInput, setConfirmInput] = useState("");
+	const user = useAuthStore((s) => s.user);
+
+	const handleLogout = async () => {
+		try {
+			await logout();
+		} catch {
+			// best effort — clear local state regardless
+		}
+		useAuthStore.getState().clearAuth();
+		window.location.href = "/login";
+	};
 
 	const renderNav = () => (
 		<>
@@ -232,14 +245,14 @@ export default function SettingsPage() {
 								<Card header="Foto profil">
 									<div className="flex items-center gap-[18px]">
 										<div className="grid h-[72px] w-[72px] shrink-0 place-items-center rounded-full font-serif text-[32px] text-white" style={{ background: "linear-gradient(135deg,#1a1a1a,#525252)" }}>
-											B
+											{user?.name?.charAt(0).toUpperCase() ?? "?"}
 										</div>
 										<div>
 											<div className="flex gap-2">
-												<button type="button" className="inline-flex h-9 items-center gap-2 rounded-lg border border-gray-300 px-4 text-[13px] font-medium text-gray-700 transition-[background-color,border-color,color] duration-200 hover:border-gray-950 hover:bg-gray-50 hover:text-gray-950">Unggah foto</button>
-												<button type="button" className="inline-flex h-9 items-center gap-2 rounded-lg border border-gray-300 px-4 text-[13px] font-medium text-gray-700 transition-[background-color,border-color,color] duration-200 hover:border-gray-950 hover:bg-gray-50 hover:text-gray-950">Hapus</button>
+												{/* TODO: not yet wired — backend lacks avatar upload endpoint. */}
+												<button type="button" disabled className="inline-flex h-9 items-center gap-2 rounded-lg border border-gray-300 px-4 text-[13px] font-medium text-gray-400 cursor-not-allowed">Unggah foto</button>
 											</div>
-											<div className="mt-2 font-mono text-[11px] text-gray-400">JPG atau PNG &middot; maks 2MB &middot; rasio 1:1</div>
+											<div className="mt-2 font-mono text-[11px] text-gray-400">Avatar upload akan tersedia segera.</div>
 										</div>
 									</div>
 								</Card>
@@ -248,52 +261,61 @@ export default function SettingsPage() {
 									header="Informasi dasar"
 									footer={
 										<>
-											<div className="text-xs text-gray-500">Perubahan terakhir: 14 Feb 2026</div>
-											<div className="flex gap-2">
-												<button type="button" className="inline-flex h-9 items-center rounded-lg border border-gray-300 px-4 text-[13px] font-medium text-gray-700 hover:border-gray-950 hover:bg-gray-50 hover:text-gray-950">Batal</button>
-												<button type="button" className="inline-flex h-9 items-center rounded-lg bg-gray-950 px-4 text-[13px] font-medium text-white hover:bg-black">Simpan profil</button>
-											</div>
+											<div className="text-xs text-gray-500">Profil edit belum tersedia di backend.</div>
 										</>
 									}
 								>
 									<div className="grid grid-cols-2 gap-3.5 max-[880px]:grid-cols-1">
-										<div><FieldLabel>Nama Lengkap</FieldLabel><TextInput defaultValue="Bagus Deva" /></div>
-										<div><FieldLabel>Nama Panggilan</FieldLabel><TextInput defaultValue="Bagus" /></div>
+										<div><FieldLabel>Nama Lengkap</FieldLabel><TextInput value={user?.name ?? ""} readOnly /></div>
+										<div>
+											<FieldLabel>Email</FieldLabel>
+											<TextInput type="email" value={user?.email ?? ""} readOnly />
+										</div>
 									</div>
 									<div className="mt-[18px]">
-										<FieldLabel>Email</FieldLabel>
-										<TextInput type="email" defaultValue="bagus@constructland.com" />
-										<div className="mt-1.5 font-mono text-[11px] text-gray-400">Email digunakan untuk login dan notifikasi.</div>
-									</div>
-									<div className="mt-[18px] grid grid-cols-2 gap-3.5 max-[880px]:grid-cols-1">
-										<div><FieldLabel>Nomor HP</FieldLabel><TextInput type="tel" defaultValue="+62 812 3456 7890" /></div>
-										<div><FieldLabel>Tanggal Lahir</FieldLabel><TextInput defaultValue="14 Agustus 1995" /></div>
-									</div>
-									<div className="mt-[18px] grid grid-cols-2 gap-3.5 max-[880px]:grid-cols-1">
-										<div><FieldLabel>Pekerjaan</FieldLabel><TextInput defaultValue="Software Engineer" /></div>
-										<div>
-											<FieldLabel>Mata Uang Utama</FieldLabel>
-											<SelectInput>
-												<option>IDR &middot; Rupiah</option>
-												<option>USD &middot; Dollar AS</option>
-												<option>SGD &middot; Dollar Singapura</option>
-											</SelectInput>
+										<FieldLabel>Bergabung Sejak</FieldLabel>
+										<TextInput
+											readOnly
+											value={user?.created_at
+												? new Date(user.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })
+												: ""}
+										/>
+										<div className="mt-1.5 font-mono text-[11px] text-gray-400">
+											Edit profil akan tersedia setelah backend menyediakan endpoint update.
 										</div>
 									</div>
 								</Card>
 
+								<Card header="Sesi">
+									<div className="flex items-start justify-between gap-4">
+										<div>
+											<div className="text-sm font-medium text-gray-950">Logout dari akun ini</div>
+											<div className="mt-0.5 text-[12.5px] text-gray-500">
+												Akan menghapus token akses dan mengarahkan kamu ke halaman login.
+											</div>
+										</div>
+										<button
+											type="button"
+											onClick={handleLogout}
+											className="inline-flex h-9 shrink-0 items-center rounded-lg border border-gray-300 px-4 text-[13px] font-medium text-gray-700 transition-[background-color,border-color,color] duration-200 hover:border-gray-950 hover:bg-gray-50 hover:text-gray-950"
+										>
+											Logout
+										</button>
+									</div>
+								</Card>
+
+								{/* TODO: not yet wired — backend lacks goals endpoint. */}
 								<Card
 									header="Tujuan keuangan"
 									footer={
 										<>
-											<div className="text-xs text-gray-500">Disinkronisasi ke widget Dashboard.</div>
-											<button type="button" className="inline-flex h-9 items-center rounded-lg bg-gray-950 px-4 text-[13px] font-medium text-white hover:bg-black">Simpan tujuan</button>
+											<div className="text-xs text-gray-500">Belum tersedia di backend.</div>
 										</>
 									}
 								>
 									<div>
 										<FieldLabel>Tujuan Utama</FieldLabel>
-										<SelectInput defaultValue="Investasi jangka panjang">
+										<SelectInput disabled defaultValue="Investasi jangka panjang">
 											<option>Tabungan dana darurat</option>
 											<option>Investasi jangka panjang</option>
 											<option>Membeli rumah / properti</option>
@@ -302,8 +324,7 @@ export default function SettingsPage() {
 									</div>
 									<div className="mt-[18px]">
 										<FieldLabel>Target tabungan bulanan (Rp)</FieldLabel>
-										<TextInput defaultValue="3.000.000" />
-										<div className="mt-1.5 font-mono text-[11px] text-gray-400">Saving rate kamu saat ini: 29% &middot; target: 35%</div>
+										<TextInput defaultValue="3.000.000" disabled />
 									</div>
 								</Card>
 							</motion.div>

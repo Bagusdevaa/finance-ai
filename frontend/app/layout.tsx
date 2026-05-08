@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { Instrument_Serif } from "next/font/google";
 import "./globals.css";
+import { QueryProvider } from "@/lib/query-client";
+import { AuthHydrate } from "@/lib/auth-hydrate";
 
 const geistSans = localFont({
 	src: "./fonts/GeistVF.woff",
@@ -37,7 +39,10 @@ export default function RootLayout({
 			<body
 				className={`${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable} font-sans antialiased bg-white text-black`}
 			>
-				{children}
+				<QueryProvider>
+					<AuthHydrate />
+					{children}
+				</QueryProvider>
 			</body>
 		</html>
 	);

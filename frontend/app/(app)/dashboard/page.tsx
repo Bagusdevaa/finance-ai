@@ -3,19 +3,13 @@
 import { useMemo, useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import { Header, IconButton } from "@/components/layout/Header";
 import { StatCard, StatGrid } from "@/components/ui/StatCard";
-import {
-	dashboardStats,
-	recentTransactions,
-	cashflowSeries,
-	allocationSegments,
-	aiInsights,
-	dummyTransactions,
-	dummyStockHoldings,
-	type DummyTransaction,
-	type AiInsight,
-} from "@/lib/dummy-data";
+import { listTransactions } from "@/lib/api/transactions";
+import { listAccounts } from "@/lib/api/accounts";
+import type { TransactionResponse } from "@/lib/api/types";
+import { useAuthStore } from "@/lib/auth-store";
 import { formatRupiah } from "@/lib/formatRupiah";
 import { cn } from "@/lib/cn";
 
@@ -31,10 +25,55 @@ const itemVariants = {
 	show: { opacity: 1, y: 0, transition: { duration: 0.55, ease: easeDesignhub } },
 };
 
+interface CashflowPoint {
+	month: string;
+	monthIso: string;
+	income: number;
+	expense: number;
+}
+
+interface AllocationSegment {
+	name: string;
+	value: number;
+	percent: number;
+	tone: string;
+}
+
+const ALLOC_TONES = ["#0a0a0a", "#404040", "#737373", "#a3a3a3", "#d4d4d4", "#e8e8e8"];
+
+const ID_MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+
+function toNumber(s: string | null | undefined): number {
+	if (!s) return 0;
+	const n = parseFloat(s);
+	return Number.isFinite(n) ? n : 0;
+}
+
+function getGreetingPrefix(): string {
+	const h = new Date().getHours();
+	if (h < 11) return "Selamat pagi";
+	if (h < 15) return "Selamat siang";
+	if (h < 19) return "Selamat sore";
+	return "Selamat malam";
+}
+
 export default function DashboardPage() {
 	const [showSearch, setShowSearch] = useState(false);
 	const [showNotif, setShowNotif] = useState(false);
 	const notifRef = useRef<HTMLDivElement>(null);
+	const user = useAuthStore((s) => s.user);
+
+	const { data: txData } = useQuery({
+		queryKey: ["transactions", { limit: 200 }],
+		queryFn: () => listTransactions({ limit: 200 }),
+	});
+	const { data: accountsData } = useQuery({
+		queryKey: ["accounts"],
+		queryFn: listAccounts,
+	});
+
+	const transactions = useMemo(() => txData?.items ?? [], [txData]);
+	const firstName = user?.name?.split(" ")[0] ?? "";
 
 	useEffect(() => {
 		if (!showNotif) return;
@@ -47,12 +86,24 @@ export default function DashboardPage() {
 		return () => document.removeEventListener("mousedown", handler);
 	}, [showNotif]);
 
+	const stats = useMemo(() => computeStats(transactions), [transactions]);
+	const cashflow = useMemo(() => computeCashflow(transactions), [transactions]);
+	const allocation = useMemo(() => computeAllocation(transactions), [transactions]);
+	const recent = useMemo(() => transactions.slice(0, 5), [transactions]);
+
 	return (
 		<>
 			<Header
 				greeting={
 					<h1 className="m-0 whitespace-nowrap font-serif text-[18px] font-normal leading-[1.1] tracking-tight2 text-gray-950 sm:text-[24px]">
-						Selamat sore, <em className="font-normal italic text-gray-700">Bagus.</em>
+						{getGreetingPrefix()}
+						{firstName ? (
+							<>
+								, <em className="font-normal italic text-gray-700">{firstName}.</em>
+							</>
+						) : (
+							"."
+						)}
 					</h1>
 				}
 				subtitle={<span className="hidden sm:inline"><TodayDate /></span>}
@@ -88,57 +139,54 @@ export default function DashboardPage() {
 				initial="hidden"
 				animate="show"
 			>
-				{/* KPI Row */}
 				<motion.section variants={itemVariants}>
 					<StatGrid>
 						<StatCard
 							label="Total Kekayaan Bersih"
-							value={dashboardStats.netWorth}
+							value={stats.netWorth}
 							format="rupiah"
 							font="serif"
-							delta={{ direction: "up", text: `${formatPercent(dashboardStats.deltaNetWorth)} bulan ini` }}
-							subtext={`vs ${formatRupiah(dashboardStats.netWorthLast)} bulan lalu`}
+							delta={{ direction: stats.netWorth >= 0 ? "up" : "down", text: `${accountsData?.length ?? 0} akun aktif` }}
+							subtext="Akumulasi semua transaksi"
 							className="border-b border-gray-200 sm:border-r xl:border-b-0"
 						/>
 						<StatCard
 							label="Pemasukan Bulan Ini"
-							value={dashboardStats.monthlyIncome}
+							value={stats.monthlyIncome}
 							format="rupiah"
 							font="mono"
-							delta={{ direction: "up", text: "Stabil" }}
-							subtext="Gaji + bonus + dividen"
+							delta={{ direction: "up", text: stats.monthlyIncome > 0 ? "Tercatat" : "Belum ada" }}
+							subtext="Total pemasukan bulan berjalan"
 							className="border-b border-gray-200 xl:border-b-0 xl:border-r"
 						/>
 						<StatCard
 							label="Pengeluaran Bulan Ini"
-							value={dashboardStats.monthlyExpense}
+							value={stats.monthlyExpense}
 							format="rupiah"
 							font="mono"
-							delta={{ direction: "down", text: "Turun 5% — Bagus!" }}
-							subtext={`vs ${formatRupiah(dashboardStats.expenseLast)} bulan lalu`}
+							delta={{ direction: stats.expenseDeltaPct < 0 ? "down" : "up", text: stats.expenseDeltaText }}
+							subtext={stats.expenseLast > 0 ? `vs ${formatRupiah(stats.expenseLast)} bulan lalu` : "Tidak ada data bulan lalu"}
 							className="border-b border-gray-200 sm:border-r xl:border-b-0"
 						/>
 						<StatCard
 							label="Rate Tabungan"
-							value={dashboardStats.savingsRate}
+							value={Math.max(0, Math.round(stats.savingsRate))}
 							format="percent"
 							font="serif"
-							delta={{ direction: "up", text: "Target 50% tercapai" }}
-							progress={dashboardStats.savingsRate}
+							delta={{ direction: stats.savingsRate >= 50 ? "up" : "down", text: stats.savingsRate >= 50 ? "Target 50% tercapai" : "Di bawah target 50%" }}
+							progress={Math.max(0, Math.min(100, stats.savingsRate))}
 						/>
 					</StatGrid>
 				</motion.section>
 
-				{/* Row 2: Chart + AI insight */}
 				<motion.section variants={itemVariants} className="grid grid-cols-1 gap-5 lg:grid-cols-[2fr_1fr]">
-					<CashflowPanel />
-					<AiInsightPanel insights={aiInsights} />
+					<CashflowPanel series={cashflow} />
+					<AiInsightPanel />
 				</motion.section>
 
-				{/* Row 3: Donut + Transactions */}
 				<motion.section variants={itemVariants} className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-					<AllocationPanel />
-					<RecentTransactionsPanel transactions={recentTransactions} />
+					<AllocationPanel segments={allocation} />
+					<RecentTransactionsPanel transactions={recent} />
 				</motion.section>
 			</motion.div>
 		</>
@@ -146,11 +194,110 @@ export default function DashboardPage() {
 }
 
 // =============================================================================
+// Computation helpers
+// =============================================================================
+
+function computeStats(transactions: TransactionResponse[]) {
+	const now = new Date();
+	const curMonth = now.getMonth();
+	const curYear = now.getFullYear();
+	const lastMonthDate = new Date(curYear, curMonth - 1, 1);
+	const lastMonth = lastMonthDate.getMonth();
+	const lastYear = lastMonthDate.getFullYear();
+
+	let netWorth = 0;
+	let monthlyIncome = 0;
+	let monthlyExpense = 0;
+	let lastIncome = 0;
+	let lastExpense = 0;
+
+	for (const t of transactions) {
+		const amt = toNumber(t.amount);
+		netWorth += amt;
+		const d = new Date(t.transaction_date);
+		if (d.getMonth() === curMonth && d.getFullYear() === curYear) {
+			if (amt >= 0) monthlyIncome += amt;
+			else monthlyExpense += Math.abs(amt);
+		} else if (d.getMonth() === lastMonth && d.getFullYear() === lastYear) {
+			if (amt >= 0) lastIncome += amt;
+			else lastExpense += Math.abs(amt);
+		}
+	}
+
+	const savingsRate = monthlyIncome > 0 ? ((monthlyIncome - monthlyExpense) / monthlyIncome) * 100 : 0;
+	const expenseDeltaPct = lastExpense > 0 ? ((monthlyExpense - lastExpense) / lastExpense) * 100 : 0;
+	const expenseDeltaText = lastExpense > 0
+		? `${expenseDeltaPct >= 0 ? "Naik" : "Turun"} ${Math.abs(expenseDeltaPct).toFixed(0)}%`
+		: "Belum ada baseline";
+
+	return {
+		netWorth,
+		monthlyIncome,
+		monthlyExpense,
+		expenseLast: lastExpense,
+		incomeLast: lastIncome,
+		savingsRate,
+		expenseDeltaPct,
+		expenseDeltaText,
+	};
+}
+
+function computeCashflow(transactions: TransactionResponse[]): CashflowPoint[] {
+	const now = new Date();
+	const buckets: CashflowPoint[] = [];
+	for (let i = 5; i >= 0; i--) {
+		const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+		const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+		buckets.push({
+			month: ID_MONTH_SHORT[d.getMonth()],
+			monthIso: key,
+			income: 0,
+			expense: 0,
+		});
+	}
+	const idxMap = new Map(buckets.map((b, i) => [b.monthIso, i]));
+	for (const t of transactions) {
+		const d = new Date(t.transaction_date);
+		const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+		const i = idxMap.get(key);
+		if (i === undefined) continue;
+		const amt = toNumber(t.amount);
+		if (amt >= 0) buckets[i].income += amt;
+		else buckets[i].expense += Math.abs(amt);
+	}
+	return buckets;
+}
+
+function computeAllocation(transactions: TransactionResponse[]): AllocationSegment[] {
+	// Group expenses by category for current month.
+	const now = new Date();
+	const curMonth = now.getMonth();
+	const curYear = now.getFullYear();
+	const totals = new Map<string, number>();
+	for (const t of transactions) {
+		const amt = toNumber(t.amount);
+		if (amt >= 0) continue;
+		const d = new Date(t.transaction_date);
+		if (d.getMonth() !== curMonth || d.getFullYear() !== curYear) continue;
+		const cat = t.category || "Lainnya";
+		totals.set(cat, (totals.get(cat) ?? 0) + Math.abs(amt));
+	}
+	const entries = Array.from(totals.entries()).sort((a, b) => b[1] - a[1]);
+	const grandTotal = entries.reduce((a, b) => a + b[1], 0);
+	if (grandTotal === 0) return [];
+	return entries.slice(0, 6).map(([name, value], i) => ({
+		name,
+		value,
+		percent: Math.round((value / grandTotal) * 100),
+		tone: ALLOC_TONES[i] ?? "#e8e8e8",
+	}));
+}
+
+// =============================================================================
 // Header bits
 // =============================================================================
 
 function TodayDate() {
-	// Tanggal hari ini di id-ID. Client-side only biar SSR/CSR cocok.
 	const [label] = useState(() =>
 		new Intl.DateTimeFormat("id-ID", {
 			weekday: "long",
@@ -162,17 +309,13 @@ function TodayDate() {
 	return <span>{label}</span>;
 }
 
-function formatPercent(p: number): string {
-	return `${p.toFixed(1).replace(".", ",")}%`;
-}
-
 // =============================================================================
-// Cashflow panel — smooth-curve SVG line chart, 6 bulan
+// Cashflow panel
 // =============================================================================
 
 type CashflowMode = "both" | "income" | "expense";
 
-function CashflowPanel() {
+function CashflowPanel({ series }: { series: CashflowPoint[] }) {
 	const [mode, setMode] = useState<CashflowMode>("both");
 
 	const modes: { id: CashflowMode; label: string }[] = [
@@ -180,6 +323,21 @@ function CashflowPanel() {
 		{ id: "income", label: "Pemasukan" },
 		{ id: "expense", label: "Pengeluaran" },
 	];
+
+	const yMax = useMemo(() => {
+		const max = Math.max(...series.flatMap((s) => [s.income, s.expense]), 1);
+		// round up to nice step
+		const pow = Math.pow(10, Math.floor(Math.log10(max)));
+		return Math.ceil(max / pow) * pow;
+	}, [series]);
+
+	if (series.length === 0) {
+		return (
+			<div className="border border-gray-200 bg-white p-10 text-center text-sm text-gray-500">
+				Belum ada data cashflow.
+			</div>
+		);
+	}
 
 	return (
 		<div className="border border-gray-200 bg-white">
@@ -189,7 +347,7 @@ function CashflowPanel() {
 						Tren Keuangan 6 Bulan
 					</h2>
 					<div className="text-xs text-gray-400">
-						{cashflowSeries[0].month} 2025 — {cashflowSeries[cashflowSeries.length - 1].month} 2026 · IDR
+						{series[0].month} — {series[series.length - 1].month} · IDR
 					</div>
 				</div>
 				<div className="relative inline-flex rounded-lg bg-gray-100 p-[3px] text-xs font-medium">
@@ -212,7 +370,7 @@ function CashflowPanel() {
 				</div>
 			</div>
 			<div className="px-5 py-5">
-				<CashflowChart mode={mode} />
+				<CashflowChart mode={mode} series={series} yMax={yMax} />
 				<div className="mt-3 flex items-center gap-5 text-xs text-gray-600">
 					<span className="inline-flex items-center gap-2">
 						<span aria-hidden className="inline-block h-px w-4 bg-gray-950" />
@@ -228,22 +386,20 @@ function CashflowPanel() {
 	);
 }
 
-function CashflowChart({ mode }: { mode: CashflowMode }) {
-	// Geometry — viewBox 720x280 (mengikuti design hub).
+function CashflowChart({ mode, series, yMax }: { mode: CashflowMode; series: CashflowPoint[]; yMax: number }) {
 	const X0 = 60;
 	const X1 = 700;
 	const Y0 = 30;
 	const Y1 = 235;
-	const yMax = 10_000_000;
 
 	const xs = useMemo(
-		() => cashflowSeries.map((_, i) => X0 + (X1 - X0) * (i / (cashflowSeries.length - 1))),
-		[],
+		() => series.map((_, i) => X0 + (X1 - X0) * (i / Math.max(1, series.length - 1))),
+		[series],
 	);
 	const ys = (v: number) => Y1 - (Y1 - Y0) * (v / yMax);
 
-	const incomePts = cashflowSeries.map((d, i) => [xs[i], ys(d.income)] as const);
-	const expensePts = cashflowSeries.map((d, i) => [xs[i], ys(d.expense)] as const);
+	const incomePts = series.map((d, i) => [xs[i], ys(d.income)] as const);
+	const expensePts = series.map((d, i) => [xs[i], ys(d.expense)] as const);
 
 	const incomePath = smoothPath(incomePts);
 	const expensePath = smoothPath(expensePts);
@@ -252,6 +408,12 @@ function CashflowChart({ mode }: { mode: CashflowMode }) {
 
 	const showIncome = mode === "income" || mode === "both";
 	const showExpense = mode === "expense" || mode === "both";
+
+	function shortLabel(n: number): string {
+		if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(0)}jt`;
+		if (n >= 1_000) return `${(n / 1_000).toFixed(0)}rb`;
+		return n.toString();
+	}
 
 	return (
 		<svg viewBox="0 0 720 280" preserveAspectRatio="none" className="block h-[280px] w-full">
@@ -265,21 +427,18 @@ function CashflowChart({ mode }: { mode: CashflowMode }) {
 					<stop offset="100%" stopColor="#737373" stopOpacity="0" />
 				</linearGradient>
 			</defs>
-			{/* gridlines */}
 			<g stroke="#f4f4f4" strokeWidth="1">
 				<line x1="40" y1="40" x2="720" y2="40" />
 				<line x1="40" y1="100" x2="720" y2="100" />
 				<line x1="40" y1="160" x2="720" y2="160" />
 				<line x1="40" y1="220" x2="720" y2="220" />
 			</g>
-			{/* y labels */}
 			<g fontFamily="var(--font-geist-mono), monospace" fontSize="10" fill="#a3a3a3">
-				<text x="36" y="44" textAnchor="end">10jt</text>
-				<text x="36" y="104" textAnchor="end">7,5jt</text>
-				<text x="36" y="164" textAnchor="end">5jt</text>
-				<text x="36" y="224" textAnchor="end">2,5jt</text>
+				<text x="36" y="44" textAnchor="end">{shortLabel(yMax)}</text>
+				<text x="36" y="104" textAnchor="end">{shortLabel(yMax * 0.75)}</text>
+				<text x="36" y="164" textAnchor="end">{shortLabel(yMax * 0.5)}</text>
+				<text x="36" y="224" textAnchor="end">{shortLabel(yMax * 0.25)}</text>
 			</g>
-			{/* areas */}
 			<motion.path
 				d={incomeArea}
 				fill="url(#incomeFill)"
@@ -294,7 +453,6 @@ function CashflowChart({ mode }: { mode: CashflowMode }) {
 				animate={{ opacity: showExpense ? 1 : 0 }}
 				transition={{ duration: 0.8, ease: easeDesignhub, delay: 0.5 }}
 			/>
-			{/* lines */}
 			<motion.path
 				d={incomePath}
 				fill="none"
@@ -319,10 +477,9 @@ function CashflowChart({ mode }: { mode: CashflowMode }) {
 				animate={{ opacity: showExpense ? 1 : 0.15 }}
 				transition={{ duration: 0.8, ease: easeDesignhub, delay: 0.2 }}
 			/>
-			{/* x labels */}
 			<g fontFamily="var(--font-geist-mono), monospace" fontSize="11" fill="#a3a3a3">
-				{cashflowSeries.map((d, i) => (
-					<text key={d.month} x={xs[i]} y={260} textAnchor="middle">
+				{series.map((d, i) => (
+					<text key={d.monthIso} x={xs[i]} y={260} textAnchor="middle">
 						{d.month}
 					</text>
 				))}
@@ -331,7 +488,6 @@ function CashflowChart({ mode }: { mode: CashflowMode }) {
 	);
 }
 
-// Catmull-Rom-style smooth path. Translated dari design hub Dashboard.html script.
 function smoothPath(points: ReadonlyArray<readonly [number, number]>): string {
 	if (points.length < 2) return "";
 	let d = `M ${points[0][0]},${points[0][1]}`;
@@ -350,10 +506,11 @@ function smoothPath(points: ReadonlyArray<readonly [number, number]>): string {
 }
 
 // =============================================================================
-// AI Insight panel
+// AI Insight panel — placeholder until insights endpoint is wired
+// TODO: replace with real AI insights endpoint when available
 // =============================================================================
 
-function AiInsightPanel({ insights }: { insights: AiInsight[] }) {
+function AiInsightPanel() {
 	return (
 		<div className="flex flex-col border border-gray-200 bg-white">
 			<div className="flex items-start justify-between gap-3 border-b border-gray-200 px-5 py-4">
@@ -362,27 +519,11 @@ function AiInsightPanel({ insights }: { insights: AiInsight[] }) {
 						<SparkleSvg />
 						AI Insight
 					</h2>
-					<div className="text-xs text-gray-400">Berdasarkan data 30 hari terakhir</div>
+					<div className="text-xs text-gray-400">Akan diperbarui secara berkala</div>
 				</div>
-				<span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-gray-200 px-2 py-1 font-mono text-[10px] uppercase tracking-label text-gray-400">
-					<span aria-hidden className="h-1.5 w-1.5 rounded-full bg-gray-950" style={{ boxShadow: "0 0 0 3px rgba(10,10,10,0.08)" }} />
-					Diperbarui tadi malam
-				</span>
 			</div>
-			<div className="flex flex-col">
-				{insights.map((insight, i) => (
-					<div
-						key={i}
-						className="flex gap-3 border-b border-gray-100 px-5 py-3.5 transition-colors duration-200 ease-designhub last:border-b-0 hover:bg-gray-50"
-					>
-						<div className="grid h-6 w-6 flex-none place-items-center font-serif text-base leading-none text-gray-700">
-							{insight.icon === "up" ? "↑" : insight.icon === "down" ? "↓" : insight.icon === "info" ? <em className="not-italic font-normal italic">i</em> : "✓"}
-						</div>
-						<div className="text-[13px] leading-[1.6] text-gray-700">
-							<InsightBody body={insight.body} />
-						</div>
-					</div>
-				))}
+			<div className="flex flex-1 items-center justify-center p-10 text-center text-sm text-gray-500">
+				Insight personal akan muncul di sini setelah cukup data transaksi terkumpul.
 			</div>
 			<Link
 				href="/chat"
@@ -395,53 +536,44 @@ function AiInsightPanel({ insights }: { insights: AiInsight[] }) {
 	);
 }
 
-function InsightBody({ body }: { body: string }) {
-	// Replace *word* dengan <strong>word</strong> tanpa pakai dangerouslySetInnerHTML.
-	const parts = body.split(/(\*[^*]+\*)/g);
-	return (
-		<>
-			{parts.map((p, i) => {
-				if (p.startsWith("*") && p.endsWith("*")) {
-					return (
-						<strong key={i} className="font-medium text-gray-950">
-							{p.slice(1, -1)}
-						</strong>
-					);
-				}
-				return <span key={i}>{p}</span>;
-			})}
-		</>
-	);
-}
-
 // =============================================================================
 // Allocation donut panel
 // =============================================================================
 
-function AllocationPanel() {
+function AllocationPanel({ segments }: { segments: AllocationSegment[] }) {
 	const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 	const r = 72;
 	const C = 2 * Math.PI * r;
 
 	const dashData = useMemo(() => {
 		let acc = 0;
-		return allocationSegments.map((seg) => {
+		return segments.map((seg) => {
 			const len = (seg.percent / 100) * C;
 			const offset = -acc;
 			acc += len;
 			return { len, offset };
 		});
-	}, [C]);
+	}, [C, segments]);
+
+	const total = segments.reduce((a, s) => a + s.value, 0);
+
+	if (segments.length === 0) {
+		return (
+			<div className="border border-gray-200 bg-white p-10 text-center text-sm text-gray-500">
+				Belum ada pengeluaran bulan ini.
+			</div>
+		);
+	}
 
 	return (
 		<div className="border border-gray-200 bg-white">
 			<div className="flex items-center justify-between gap-3 border-b border-gray-200 px-5 py-4">
 				<div className="flex min-w-0 flex-col gap-0.5">
-					<h2 className="m-0 text-[15px] font-medium tracking-tight2 text-gray-950">Alokasi Aset</h2>
-					<div className="text-xs text-gray-400">Total Rp 247,5 juta · 5 kategori</div>
+					<h2 className="m-0 text-[15px] font-medium tracking-tight2 text-gray-950">Alokasi Pengeluaran</h2>
+					<div className="text-xs text-gray-400">{formatRupiah(total)} · {segments.length} kategori</div>
 				</div>
 				<a
-					href="/assets"
+					href="/transactions"
 					className="inline-flex items-center gap-1 text-xs text-gray-500 transition-[color,gap] duration-200 ease-designhub hover:gap-2 hover:text-gray-950"
 				>
 					Lihat Semua →
@@ -451,7 +583,7 @@ function AllocationPanel() {
 				<div className="relative h-[200px] w-[200px] flex-none">
 					<svg viewBox="0 0 200 200" className="h-[200px] w-[200px] -rotate-90">
 						<circle cx="100" cy="100" r={r} fill="none" stroke="#f4f4f4" strokeWidth="18" />
-						{allocationSegments.map((seg, i) => (
+						{segments.map((seg, i) => (
 							<motion.circle
 								key={seg.name}
 								cx="100"
@@ -477,17 +609,16 @@ function AllocationPanel() {
 					<div className="absolute inset-0 grid place-items-center text-center">
 						<div>
 							<div className="text-[10px] font-medium uppercase tracking-labelWide text-gray-400">
-								Total Aset
+								Total Bulan Ini
 							</div>
-							<div className="mt-1.5 font-serif text-[26px] leading-none tracking-tight2 text-gray-950">
-								Rp 247,5 jt
+							<div className="mt-1.5 font-serif text-[22px] leading-none tracking-tight2 text-gray-950">
+								{formatRupiahShort(total)}
 							</div>
-							<div className="mt-1 font-mono text-[11px] text-gray-400">+ Rp 27,3 jt</div>
 						</div>
 					</div>
 				</div>
 				<div className="flex min-w-0 flex-1 flex-col">
-					{allocationSegments.map((seg, i) => (
+					{segments.map((seg, i) => (
 						<div
 							key={seg.name}
 							onMouseEnter={() => setHoverIdx(i)}
@@ -511,15 +642,16 @@ function AllocationPanel() {
 }
 
 function formatRupiahShort(n: number): string {
-	const jt = n / 1_000_000;
-	return `Rp ${jt.toFixed(1).replace(".", ",")} jt`;
+	if (n >= 1_000_000) return `Rp ${(n / 1_000_000).toFixed(1).replace(".", ",")} jt`;
+	if (n >= 1_000) return `Rp ${(n / 1_000).toFixed(0)} rb`;
+	return `Rp ${n.toLocaleString("id-ID")}`;
 }
 
 // =============================================================================
 // Recent Transactions panel
 // =============================================================================
 
-function RecentTransactionsPanel({ transactions }: { transactions: DummyTransaction[] }) {
+function RecentTransactionsPanel({ transactions }: { transactions: TransactionResponse[] }) {
 	return (
 		<div className="border border-gray-200 bg-white">
 			<div className="flex items-center justify-between gap-3 border-b border-gray-200 px-5 py-4">
@@ -527,7 +659,7 @@ function RecentTransactionsPanel({ transactions }: { transactions: DummyTransact
 					<h2 className="m-0 text-[15px] font-medium tracking-tight2 text-gray-950">
 						Transaksi Terbaru
 					</h2>
-					<div className="text-xs text-gray-400">5 transaksi terakhir · 27 Apr 2026</div>
+					<div className="text-xs text-gray-400">{transactions.length} transaksi terakhir</div>
 				</div>
 				<a
 					href="/transactions"
@@ -537,39 +669,62 @@ function RecentTransactionsPanel({ transactions }: { transactions: DummyTransact
 				</a>
 			</div>
 			<div className="py-1.5">
-				{transactions.map((tx, i) => (
-					<div
-						key={tx.id}
-						className={cn(
-							"grid grid-cols-[36px_1fr_auto] items-center gap-3.5 px-5 py-3 transition-colors duration-200 ease-designhub hover:bg-gray-50",
-							i > 0 && "border-t border-gray-100",
-						)}
-					>
-						<div className="grid h-9 w-9 flex-none place-items-center rounded-[10px] bg-gray-100 text-gray-700">
-							<TxIcon kind={tx.icon ?? "shopping"} />
-						</div>
-						<div className="min-w-0">
-							<div className="truncate text-[13px] font-medium leading-tight text-gray-950">
-								{tx.merchant}
-							</div>
-							<div className="mt-0.5 text-[11px] text-gray-400">
-								{tx.category} · {tx.time ?? formatShortDate(tx.date)} · {tx.account}
-							</div>
-						</div>
-						<div
-							className={cn(
-								"whitespace-nowrap text-right font-mono text-[13px] tabular-nums",
-								tx.amount > 0 ? "font-medium text-gray-950" : "text-gray-600",
-							)}
-						>
-							{tx.amount > 0 ? "+ " : "− "}
-							{formatRupiah(Math.abs(tx.amount))}
-						</div>
+				{transactions.length === 0 ? (
+					<div className="px-5 py-8 text-center text-sm text-gray-500">
+						Belum ada transaksi. <Link href="/import" className="text-gray-950 underline">Import data</Link> untuk mulai.
 					</div>
-				))}
+				) : (
+					transactions.map((tx, i) => {
+						const amt = toNumber(tx.amount);
+						return (
+							<div
+								key={tx.id}
+								className={cn(
+									"grid grid-cols-[36px_1fr_auto] items-center gap-3.5 px-5 py-3 transition-colors duration-200 ease-designhub hover:bg-gray-50",
+									i > 0 && "border-t border-gray-100",
+								)}
+							>
+								<div className="grid h-9 w-9 flex-none place-items-center rounded-[10px] bg-gray-100 text-gray-700">
+									<TxIcon kind={inferIcon(tx)} />
+								</div>
+								<div className="min-w-0">
+									<div className="truncate text-[13px] font-medium leading-tight text-gray-950">
+										{tx.merchant_name || tx.description || "Tanpa nama"}
+									</div>
+									<div className="mt-0.5 text-[11px] text-gray-400">
+										{(tx.category || "Lainnya")} · {formatShortDate(tx.transaction_date)} · {tx.account?.name ?? "—"}
+									</div>
+								</div>
+								<div
+									className={cn(
+										"whitespace-nowrap text-right font-mono text-[13px] tabular-nums",
+										amt > 0 ? "font-medium text-gray-950" : "text-gray-600",
+									)}
+								>
+									{amt > 0 ? "+ " : "− "}
+									{formatRupiah(Math.abs(amt))}
+								</div>
+							</div>
+						);
+					})
+				)}
 			</div>
 		</div>
 	);
+}
+
+type IconKind = "food" | "income" | "transport" | "entertainment" | "investment" | "shopping" | "bill";
+
+function inferIcon(tx: TransactionResponse): IconKind {
+	const amt = toNumber(tx.amount);
+	if (amt > 0) return "income";
+	const cat = (tx.category ?? "").toLowerCase();
+	if (cat.includes("makan") || cat.includes("food") || cat.includes("kopi")) return "food";
+	if (cat.includes("transport") || cat.includes("grab") || cat.includes("gojek")) return "transport";
+	if (cat.includes("hibur") || cat.includes("netflix") || cat.includes("spotify")) return "entertainment";
+	if (cat.includes("invest") || cat.includes("saham") || cat.includes("reksa")) return "investment";
+	if (cat.includes("tagihan") || cat.includes("listrik") || cat.includes("internet")) return "bill";
+	return "shopping";
 }
 
 function formatShortDate(iso: string): string {
@@ -577,7 +732,7 @@ function formatShortDate(iso: string): string {
 }
 
 // =============================================================================
-// Inline icons (mengikuti SVG paths design hub)
+// Inline icons
 // =============================================================================
 
 function SearchSvg() {
@@ -629,6 +784,7 @@ function ArrowRightSvg() {
 function SearchOverlay({ open, onClose }: { open: boolean; onClose: () => void }) {
 	const [query, setQuery] = useState("");
 	const inputRef = useRef<HTMLInputElement>(null);
+	const [debounced, setDebounced] = useState("");
 
 	useEffect(() => {
 		if (!open) return;
@@ -642,23 +798,23 @@ function SearchOverlay({ open, onClose }: { open: boolean; onClose: () => void }
 	useEffect(() => {
 		if (open) {
 			setQuery("");
+			setDebounced("");
 			setTimeout(() => inputRef.current?.focus(), 50);
 		}
 	}, [open]);
 
-	const results = useMemo(() => {
-		if (!query.trim()) return [];
-		const q = query.toLowerCase();
-		const txResults = dummyTransactions
-			.filter((t) => `${t.merchant_name} ${t.description} ${t.category}`.toLowerCase().includes(q))
-			.slice(0, 4)
-			.map((t) => ({ type: "transaction" as const, id: t.id, title: t.merchant_name, sub: `${t.category} · ${t.account}`, amount: t.amount }));
-		const stockResults = dummyStockHoldings
-			.filter((s) => `${s.ticker} ${s.name}`.toLowerCase().includes(q))
-			.slice(0, 2)
-			.map((s) => ({ type: "asset" as const, id: s.ticker, title: `${s.ticker} — ${s.name}`, sub: `${s.totalLot} lot · ${s.accounts.map((a) => a.platform).join(", ")}`, amount: s.value }));
-		return [...txResults, ...stockResults];
+	useEffect(() => {
+		const t = setTimeout(() => setDebounced(query.trim()), 300);
+		return () => clearTimeout(t);
 	}, [query]);
+
+	const { data, isFetching } = useQuery({
+		queryKey: ["transactions-search", debounced],
+		queryFn: () => listTransactions({ search: debounced, limit: 8 }),
+		enabled: open && debounced.length > 0,
+	});
+
+	const results = data?.items ?? [];
 
 	return (
 		<AnimatePresence>
@@ -686,7 +842,7 @@ function SearchOverlay({ open, onClose }: { open: boolean; onClose: () => void }
 								type="text"
 								value={query}
 								onChange={(e) => setQuery(e.target.value)}
-								placeholder="Cari transaksi, aset, atau kategori..."
+								placeholder="Cari transaksi..."
 								className="flex-1 bg-transparent text-sm text-gray-950 outline-none placeholder:text-gray-400"
 							/>
 							<button
@@ -697,33 +853,40 @@ function SearchOverlay({ open, onClose }: { open: boolean; onClose: () => void }
 								ESC
 							</button>
 						</div>
-						{query.trim() && (
+						{debounced && (
 							<div className="max-h-[340px] overflow-y-auto py-2">
-								{results.length === 0 ? (
+								{isFetching ? (
+									<div className="px-5 py-8 text-center text-sm text-gray-500">Mencari...</div>
+								) : results.length === 0 ? (
 									<div className="px-5 py-8 text-center text-sm text-gray-500">
-										Tidak ditemukan hasil untuk &ldquo;{query}&rdquo;
+										Tidak ditemukan hasil untuk &ldquo;{debounced}&rdquo;
 									</div>
 								) : (
-									results.map((r) => (
-										<div
-											key={r.id}
-											className="flex items-center justify-between gap-3 px-5 py-3 transition-colors duration-150 hover:bg-gray-50"
-										>
-											<div className="min-w-0">
-												<div className="truncate text-[13px] font-medium text-gray-950">{r.title}</div>
-												<div className="mt-0.5 text-[11px] text-gray-400">
-													{r.type === "transaction" ? "Transaksi" : "Aset"} · {r.sub}
+									results.map((r) => {
+										const amt = toNumber(r.amount);
+										return (
+											<div
+												key={r.id}
+												className="flex items-center justify-between gap-3 px-5 py-3 transition-colors duration-150 hover:bg-gray-50"
+											>
+												<div className="min-w-0">
+													<div className="truncate text-[13px] font-medium text-gray-950">
+														{r.merchant_name || r.description || "Tanpa nama"}
+													</div>
+													<div className="mt-0.5 text-[11px] text-gray-400">
+														{(r.category || "Lainnya")} · {r.account?.name ?? "—"}
+													</div>
 												</div>
+												<span className={cn(
+													"shrink-0 font-mono text-[13px] tabular-nums",
+													amt > 0 ? "font-medium text-gray-950" : "text-gray-600",
+												)}>
+													{amt > 0 ? "+ " : "− "}
+													{formatRupiah(Math.abs(amt))}
+												</span>
 											</div>
-											<span className={cn(
-												"shrink-0 font-mono text-[13px] tabular-nums",
-												r.amount > 0 ? "font-medium text-gray-950" : "text-gray-600",
-											)}>
-												{r.amount > 0 ? "+ " : "− "}
-												{formatRupiah(Math.abs(r.amount))}
-											</span>
-										</div>
-									))
+										);
+									})
 								)}
 							</div>
 						)}
@@ -735,15 +898,10 @@ function SearchOverlay({ open, onClose }: { open: boolean; onClose: () => void }
 }
 
 // =============================================================================
-// Notification dropdown
+// Notification dropdown — TODO: wire to real notifications endpoint when available
 // =============================================================================
 
-const NOTIFICATIONS = [
-	{ id: 1, text: "Pengeluaran makan melebihi anggaran bulan ini", time: "2 jam lalu" },
-	{ id: 2, text: "Dividen BBCA masuk Rp 450.000", time: "Kemarin, 14:30" },
-	{ id: 3, text: "Harga TLKM naik 3,2% hari ini", time: "Kemarin, 09:15" },
-	{ id: 4, text: "Tagihan listrik PLN jatuh tempo 3 hari lagi", time: "2 hari lalu" },
-];
+const NOTIFICATIONS: { id: number; text: string; time: string }[] = [];
 
 function NotificationDropdown({ onClose }: { onClose: () => void }) {
 	return (
@@ -759,23 +917,27 @@ function NotificationDropdown({ onClose }: { onClose: () => void }) {
 				<span className="font-mono text-[10px] text-gray-400">{NOTIFICATIONS.length} baru</span>
 			</div>
 			<div className="py-1">
-				{NOTIFICATIONS.map((n) => (
-					<button
-						key={n.id}
-						type="button"
-						onClick={onClose}
-						className="flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors duration-150 hover:bg-gray-50"
-					>
-						<span className="text-[13px] leading-snug text-gray-700">{n.text}</span>
-						<span className="font-mono text-[10px] text-gray-400">{n.time}</span>
-					</button>
-				))}
+				{NOTIFICATIONS.length === 0 ? (
+					<div className="px-4 py-6 text-center text-[13px] text-gray-500">Tidak ada notifikasi.</div>
+				) : (
+					NOTIFICATIONS.map((n) => (
+						<button
+							key={n.id}
+							type="button"
+							onClick={onClose}
+							className="flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors duration-150 hover:bg-gray-50"
+						>
+							<span className="text-[13px] leading-snug text-gray-700">{n.text}</span>
+							<span className="font-mono text-[10px] text-gray-400">{n.time}</span>
+						</button>
+					))
+				)}
 			</div>
 		</motion.div>
 	);
 }
 
-function TxIcon({ kind }: { kind: NonNullable<DummyTransaction["icon"]> }) {
+function TxIcon({ kind }: { kind: IconKind }) {
 	const common = { viewBox: "0 0 24 24", width: 16, height: 16, fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
 	switch (kind) {
 		case "food":
