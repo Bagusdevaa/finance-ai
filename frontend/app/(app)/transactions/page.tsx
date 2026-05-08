@@ -26,7 +26,10 @@ const easeDesignhub = [0.2, 0.7, 0.2, 1] as const;
 
 type TypeFilter = "all" | "in" | "out";
 
-const CATEGORIES = ["Semua kategori", "Pemasukan", "Makan & Minum", "Belanja", "Transportasi", "Tagihan", "Investasi", "Hiburan"];
+const ALL_CATEGORIES_LABEL = "Semua kategori";
+// Saran kategori untuk modal "Tambah Manual". Filter dropdown sendiri di-derive
+// dari data user yang sudah ada (lihat `availableCategories` di komponen).
+const SUGGESTED_CATEGORIES = ["Pemasukan", "Makan & Minum", "Belanja", "Transportasi", "Tagihan", "Investasi", "Hiburan"];
 const ALL_ACCOUNTS_LABEL = "Semua akun";
 
 function toNumber(s: string | null | undefined): number {
@@ -40,12 +43,13 @@ export default function TransactionsPage() {
 	const [search, setSearch] = useState("");
 	const [debouncedSearch, setDebouncedSearch] = useState("");
 	const [type, setType] = useState<TypeFilter>("all");
-	const [category, setCategory] = useState(CATEGORIES[0]);
+	const [category, setCategory] = useState(ALL_CATEGORIES_LABEL);
 	const [accountLabel, setAccountLabel] = useState(ALL_ACCOUNTS_LABEL);
 	const [openCat, setOpenCat] = useState(false);
 	const [openAcc, setOpenAcc] = useState(false);
 	const [selected, setSelected] = useState<TransactionResponse | null>(null);
 	const [showFilters, setShowFilters] = useState(true);
+	const [filterAnimating, setFilterAnimating] = useState(false);
 	const [showAddModal, setShowAddModal] = useState(false);
 
 	// Debounce search input → API param
@@ -73,7 +77,7 @@ export default function TransactionsPage() {
 		const p: ListTransactionsParams = { limit: 50 };
 		if (debouncedSearch) p.search = debouncedSearch;
 		if (type !== "all") p.type = type;
-		if (category !== CATEGORIES[0]) p.category = category;
+		if (category !== ALL_CATEGORIES_LABEL) p.category = category;
 		const acc = accountByName.get(accountLabel);
 		if (acc) p.account_id = acc.id;
 		return p;
@@ -87,6 +91,22 @@ export default function TransactionsPage() {
 	});
 
 	const transactions = useMemo(() => data?.pages.flatMap((p) => p.items) ?? [], [data]);
+
+	// Kategori dropdown harus reflect data user yang ADA. Query terpisah tanpa
+	// filter — kalau pakai `transactions` (yang sudah ke-filter), opsi hilang
+	// begitu user mulai filter.
+	const { data: catSampleData } = useQuery({
+		queryKey: ["transactions-cat-sample"],
+		queryFn: () => listTransactions({ limit: 200 }),
+		staleTime: 60_000,
+	});
+	const categoryOptions = useMemo(() => {
+		const fromData = (catSampleData?.items ?? [])
+			.map((t) => t.category)
+			.filter((c): c is string => !!c && c.trim().length > 0);
+		const unique = Array.from(new Set(fromData)).sort((a, b) => a.localeCompare(b, "id"));
+		return [ALL_CATEGORIES_LABEL, ...unique];
+	}, [catSampleData]);
 
 	const createMutation = useMutation({
 		mutationFn: (payload: TransactionCreate) => createTransaction(payload),
@@ -169,7 +189,9 @@ export default function TransactionsPage() {
 					animate={{ opacity: 1, height: "auto" }}
 					exit={{ opacity: 0, height: 0 }}
 					transition={{ duration: 0.25, ease: easeDesignhub }}
-					className="overflow-hidden"
+					onAnimationStart={() => setFilterAnimating(true)}
+					onAnimationComplete={() => setFilterAnimating(false)}
+					className={filterAnimating ? "overflow-hidden" : "overflow-visible"}
 				>
 				<div className="flex flex-wrap items-center gap-2.5 border-b border-gray-200 pb-4">
 					<div className="relative min-w-0 max-w-[380px] flex-1 basis-full min-[375px]:basis-auto min-[375px]:min-w-[200px] sm:min-w-[240px]">
@@ -193,7 +215,7 @@ export default function TransactionsPage() {
 							setOpenCat(v);
 							if (v) setOpenAcc(false);
 						}}
-						options={CATEGORIES}
+						options={categoryOptions}
 						onSelect={setCategory}
 					/>
 					<Dropdown
@@ -701,7 +723,7 @@ function PRow({
 // Add Transaction Modal
 // =============================================================================
 
-const ADD_CATEGORIES = CATEGORIES.filter((c) => c !== "Semua kategori");
+const ADD_CATEGORIES = SUGGESTED_CATEGORIES;
 
 function AddTransactionModal({
 	open,
