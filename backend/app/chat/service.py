@@ -143,6 +143,119 @@ async def _expense_summary(
 	]
 
 
+async def _top_transactions(
+	db: AsyncSession, user: User, *, direction: str, limit: int = 10
+) -> list[dict]:
+	"""Top N transaksi by absolute amount. direction='out' (negatif) atau 'in' (positif).
+
+	SECURITY: filter user_id mandatory.
+	"""
+	conditions = [
+		Transaction.user_id == user.id,
+		Transaction.deleted_at.is_(None),
+	]
+	if direction == "out":
+		conditions.append(Transaction.amount < 0)
+		order = Transaction.amount.asc()  # most negative first
+	else:
+		conditions.append(Transaction.amount > 0)
+		order = Transaction.amount.desc()  # most positive first
+
+	stmt = (
+		select(
+			Transaction.transaction_date,
+			Transaction.merchant_name,
+			Transaction.category,
+			Transaction.amount,
+		)
+		.where(*conditions)
+		.order_by(order)
+		.limit(limit)
+	)
+	result = await db.execute(stmt)
+	return [
+		{
+			"date": row.transaction_date.isoformat(),
+			"merchant": row.merchant_name or "—",
+			"category": row.category or "Tanpa kategori",
+			"amount": float(row.amount),
+		}
+		for row in result.all()
+	]
+
+
+async def _category_breakdown(
+	db: AsyncSession, user: User, *, direction: str, limit: int = 10
+) -> list[dict]:
+	"""Aggregate amount per category — full period (bukan 30 hari)."""
+	conditions = [
+		Transaction.user_id == user.id,
+		Transaction.deleted_at.is_(None),
+	]
+	if direction == "out":
+		conditions.append(Transaction.amount < 0)
+		order = func.sum(Transaction.amount).asc()
+	else:
+		conditions.append(Transaction.amount > 0)
+		order = func.sum(Transaction.amount).desc()
+
+	stmt = (
+		select(
+			Transaction.category,
+			func.sum(Transaction.amount).label("total"),
+			func.count().label("count"),
+		)
+		.where(*conditions)
+		.group_by(Transaction.category)
+		.order_by(order)
+		.limit(limit)
+	)
+	result = await db.execute(stmt)
+	return [
+		{
+			"category": row.category or "Tanpa kategori",
+			"total": float(row.total or 0),
+			"count": row.count,
+		}
+		for row in result.all()
+	]
+
+
+async def _monthly_trend(db: AsyncSession, user: User, months: int = 12) -> list[dict]:
+	"""Sum in/out per bulan, untuk N bulan terakhir."""
+	since = date.today() - timedelta(days=months * 31)
+	month_expr = func.to_char(Transaction.transaction_date, "YYYY-MM").label("month")
+	stmt = (
+		select(
+			month_expr,
+			func.sum(
+				func.greatest(Transaction.amount, 0)
+			).label("income"),
+			func.sum(
+				func.least(Transaction.amount, 0)
+			).label("expense"),
+			func.count().label("count"),
+		)
+		.where(
+			Transaction.user_id == user.id,
+			Transaction.deleted_at.is_(None),
+			Transaction.transaction_date >= since,
+		)
+		.group_by(month_expr)
+		.order_by(month_expr)
+	)
+	result = await db.execute(stmt)
+	return [
+		{
+			"month": row.month,
+			"income": float(row.income or 0),
+			"expense": float(row.expense or 0),
+			"count": row.count,
+		}
+		for row in result.all()
+	]
+
+
 async def _dataset_overview(db: AsyncSession, user: User) -> dict | None:
 	"""Total transaksi + date range + total in/out — overview global.
 
@@ -179,6 +292,11 @@ def _format_context_block(
 	rag_hits: list[dict],
 	expense_summary: list[dict],
 	overview: dict | None = None,
+	expense_breakdown: list[dict] | None = None,
+	income_breakdown: list[dict] | None = None,
+	top_expenses: list[dict] | None = None,
+	top_incomes: list[dict] | None = None,
+	monthly_trend: list[dict] | None = None,
 ) -> str:
 	"""Susun plain-text context untuk system prompt."""
 	parts: list[str] = []
@@ -198,6 +316,48 @@ def _format_context_block(
 		parts.append(
 			f"- Total pengeluaran: Rp{abs(overview['total_out']):,.0f}"
 		)
+		parts.append("")
+
+	if monthly_trend:
+		parts.append("Tren per bulan (in/out):")
+		for row in monthly_trend:
+			parts.append(
+				f"- {row['month']}: +Rp{row['income']:,.0f} / -Rp{abs(row['expense']):,.0f} ({row['count']} tx)"
+			)
+		parts.append("")
+
+	if expense_breakdown:
+		parts.append("Pengeluaran per kategori (seluruh periode):")
+		for row in expense_breakdown:
+			amount = abs(Decimal(str(row["total"])))
+			parts.append(
+				f"- {row['category']}: Rp{amount:,.0f} ({row['count']} tx)"
+			)
+		parts.append("")
+
+	if income_breakdown:
+		parts.append("Pemasukan per kategori (seluruh periode):")
+		for row in income_breakdown:
+			amount = abs(Decimal(str(row["total"])))
+			parts.append(
+				f"- {row['category']}: Rp{amount:,.0f} ({row['count']} tx)"
+			)
+		parts.append("")
+
+	if top_expenses:
+		parts.append("Top 10 pengeluaran terbesar:")
+		for tx in top_expenses:
+			parts.append(
+				f"- {tx['date']} Rp{abs(tx['amount']):,.0f} {tx['merchant']} ({tx['category']})"
+			)
+		parts.append("")
+
+	if top_incomes:
+		parts.append("Top 10 pemasukan terbesar:")
+		for tx in top_incomes:
+			parts.append(
+				f"- {tx['date']} Rp{tx['amount']:,.0f} {tx['merchant']} ({tx['category']})"
+			)
 		parts.append("")
 
 	if expense_summary:
@@ -312,13 +472,50 @@ async def post_message_streaming(
 		logger.warning("dataset_overview_failed", error=str(exc))
 		overview = None
 
+	# Pre-aggregations buat pertanyaan analitis ("terbesar", "kemana uang").
+	# Murah karena indexed column. Skip diam-diam kalau gagal.
+	try:
+		expense_breakdown = await _category_breakdown(db, user, direction="out")
+	except Exception as exc:
+		logger.warning("expense_breakdown_failed", error=str(exc))
+		expense_breakdown = []
+	try:
+		income_breakdown = await _category_breakdown(db, user, direction="in")
+	except Exception as exc:
+		logger.warning("income_breakdown_failed", error=str(exc))
+		income_breakdown = []
+	try:
+		top_expenses = await _top_transactions(db, user, direction="out")
+	except Exception as exc:
+		logger.warning("top_expenses_failed", error=str(exc))
+		top_expenses = []
+	try:
+		top_incomes = await _top_transactions(db, user, direction="in")
+	except Exception as exc:
+		logger.warning("top_incomes_failed", error=str(exc))
+		top_incomes = []
+	try:
+		monthly_trend = await _monthly_trend(db, user)
+	except Exception as exc:
+		logger.warning("monthly_trend_failed", error=str(exc))
+		monthly_trend = []
+
 	source_ids = [
 		h["transaction_id"] for h in rag_hits if h.get("transaction_id")
 	]
 	yield {"type": "context", "sources": source_ids}
 
 	# 4. Build messages untuk Groq.
-	context_block = _format_context_block(rag_hits, expense_summary, overview)
+	context_block = _format_context_block(
+		rag_hits,
+		expense_summary,
+		overview=overview,
+		expense_breakdown=expense_breakdown,
+		income_breakdown=income_breakdown,
+		top_expenses=top_expenses,
+		top_incomes=top_incomes,
+		monthly_trend=monthly_trend,
+	)
 	messages: list[dict] = [
 		{"role": "system", "content": _build_system_prompt(context_block)}
 	]
