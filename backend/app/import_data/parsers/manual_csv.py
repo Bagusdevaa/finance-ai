@@ -60,8 +60,11 @@ _HEADER_ALIASES: dict[str, set[str]] = {
 	"type": {"type", "tipe", "jenis", "transaction type", "tipe transaksi", "jenis transaksi"},
 }
 
-# Type values yang artinya "ini pengeluaran" (negatif).
+# Type values yang DIKENAL menentukan sign. Selain itu, kolom `type` di-treat
+# sebagai metadata (mis. "Pembayaran Qris", "Transfer") dan sign ditentukan
+# dari kolom amount itu sendiri.
 _TYPE_DEBIT_VALUES = {"debit", "dr", "pengeluaran", "keluar", "out", "expense"}
+_TYPE_CREDIT_VALUES = {"kredit", "credit", "cr", "pemasukan", "masuk", "in", "income"}
 
 
 def _build_header_map(fieldnames: list[str | None]) -> dict[str, str]:
@@ -150,11 +153,14 @@ def _resolve_amount(
 		if not raw_amount or raw_amount == "-":
 			return None
 		amount = _parse_amount(raw_amount)
+		# Hanya flip sign kalau kolom type SECARA EKSPLISIT mengindikasikan arah.
+		# Kalau valuenya method/kategori (e.g. "Pembayaran Qris", "Transfer"),
+		# trust sign dari kolom amount.
 		if "type" in headers:
 			tval = (raw.get(headers["type"]) or "").strip().lower()
 			if tval in _TYPE_DEBIT_VALUES:
 				amount = -abs(amount)
-			elif tval:
+			elif tval in _TYPE_CREDIT_VALUES:
 				amount = abs(amount)
 		return amount
 
