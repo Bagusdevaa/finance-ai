@@ -41,6 +41,7 @@ class ImportSourceType(str, Enum):
 	pdf_bca = "pdf_bca"
 	pdf_mandiri = "pdf_mandiri"
 	pdf_bri = "pdf_bri"
+	pdf_bni = "pdf_bni"
 	csv_bibit = "csv_bibit"
 	csv_ipot = "csv_ipot"
 	image_vision = "image_vision"

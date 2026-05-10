@@ -195,6 +195,7 @@ export type ImportSourceType =
 	| "pdf_bca"
 	| "pdf_mandiri"
 	| "pdf_bri"
+	| "pdf_bni"
 	| "csv_bibit"
 	| "csv_ipot"
 	| "image_vision"

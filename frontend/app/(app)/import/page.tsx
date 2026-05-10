@@ -47,7 +47,7 @@ const SOURCE_GROUPS: { label: string; items: SourceGroupItem[]; addLabel?: strin
 			{ id: "bca", name: "BCA", logo: "B", fmt: "PDF", group: "bank", sourceType: "pdf_bca" },
 			{ id: "mandiri", name: "Mandiri", logo: "M", fmt: "PDF", group: "bank", sourceType: "pdf_mandiri" },
 			{ id: "bri", name: "BRI", logo: "R", fmt: "PDF", group: "bank", sourceType: "pdf_bri" },
-			{ id: "bni", name: "BNI", logo: "N", fmt: "PDF", group: "bank", sourceType: "pdf_bca", disabled: true },
+			{ id: "bni", name: "BNI", logo: "N", fmt: "PDF", group: "bank", sourceType: "pdf_bni" },
 		],
 		addLabel: "Tambah Bank Lain",
 	},
