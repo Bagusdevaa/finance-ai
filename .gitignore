@@ -57,3 +57,9 @@ caddy_config/
 # Backend temp uploads
 backend/uploads/
 backend/tmp/
+
+# Test fixtures with sensitive data (real bank statements, etc.)
+backend/tests/fixtures/bni/
+backend/tests/fixtures/bca/
+backend/tests/fixtures/mandiri/
+backend/tests/fixtures/bri/
