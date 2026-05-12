@@ -61,5 +61,8 @@ backend/tmp/
 # Test fixtures with sensitive data (real bank statements, etc.)
 backend/tests/fixtures/bni/
 backend/tests/fixtures/bca/
+backend/tests/fixtures/mybca/
 backend/tests/fixtures/mandiri/
 backend/tests/fixtures/bri/
+backend/tests/fixtures/permata/
+backend/tests/fixtures/vision/
