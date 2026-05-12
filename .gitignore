@@ -58,6 +58,9 @@ caddy_config/
 backend/uploads/
 backend/tmp/
 
+# Superpowers brainstorming session files
+.superpowers/
+
 # Test fixtures with sensitive data (real bank statements, etc.)
 backend/tests/fixtures/bni/
 backend/tests/fixtures/bca/
