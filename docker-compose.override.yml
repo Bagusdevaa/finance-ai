@@ -53,6 +53,9 @@ services:
       # Override conftest's default localhost:5432 (which fails inside container)
       # untuk point ke postgres service via compose network
       TEST_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/financeai_test
+      # Browser hits backend via Caddy at http://localhost (port 80, no port suffix),
+      # bukan http://localhost:3000. Override backend CORS allow_origins untuk dev Docker.
+      FRONTEND_URL: http://localhost
     # Override prod CMD untuk --reload
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app"]
 
