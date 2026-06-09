@@ -122,3 +122,18 @@ def test_live_csv_bytes_routes_to_manual_csv():
 	assert isinstance(parser, ManualCsvParser)
 	result = parser.parse(csv)
 	assert len(result.rows) == 2
+
+
+def test_live_pluang_portfolio_classify_holding():
+	"""Pluang Portfolio Assets tab → content_type=holding, holdings extracted
+	dengan qty=None (summary view cuma punya market value). 1 Groq call."""
+	from app.import_data.dispatcher import dispatch
+
+	img = _load("vision/invest/pluang-portfolio-tab.jpeg")
+	parser = dispatch(img)
+	result = parser.parse(img)
+
+	assert result.content_type == "holding"
+	assert len(result.holdings) >= 3
+	# Summary view: setidaknya sebagian holding tidak punya qty tapi punya market_value.
+	assert any(h.qty is None and h.market_value is not None for h in result.holdings)
