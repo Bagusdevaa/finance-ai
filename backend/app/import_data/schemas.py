@@ -60,7 +60,7 @@ class DetectedHoldingResponse(BaseModel):
 
 	line_no: int
 	ticker: str
-	qty: Decimal
+	qty: Decimal | None = None
 	avg_price: Decimal | None = None
 	market_value: Decimal | None = None
 	currency: str

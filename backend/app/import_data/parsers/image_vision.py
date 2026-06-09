@@ -147,16 +147,15 @@ def _to_parsed_holding(item: dict, line_no: int) -> ParsedHolding | None:
 	if not ticker:
 		return None
 
-	# qty: required, must be numeric
-	qty_raw = item.get("qty")
-	if qty_raw is None:
-		return None
-	try:
-		qty = Decimal(str(qty_raw))
-	except (InvalidOperation, ValueError):
-		return None
-	if qty == 0:
-		return None
+	# qty: optional sekarang — summary view (Pluang Portfolio tab) cuma punya market_value.
+	qty = None
+	if item.get("qty") is not None:
+		try:
+			qty = Decimal(str(item["qty"]))
+			if qty == 0:
+				qty = None
+		except (InvalidOperation, ValueError):
+			qty = None
 
 	# avg_price: optional
 	avg_price = None
@@ -173,6 +172,10 @@ def _to_parsed_holding(item: dict, line_no: int) -> ParsedHolding | None:
 			market_value = Decimal(str(item["market_value"]))
 		except (InvalidOperation, ValueError):
 			pass
+
+	# Skip kalau qty DAN market_value dua-duanya tidak ada (tidak ada data berguna).
+	if qty is None and market_value is None:
+		return None
 
 	currency_raw = item.get("currency") or "IDR"
 	currency = currency_raw if currency_raw in _VALID_CURRENCIES else "IDR"

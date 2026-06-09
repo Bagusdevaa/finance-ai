@@ -52,7 +52,7 @@ Schema "transactions" item:
 Schema "holdings" item:
 {
   "ticker": "QQQ" | "BTC" | "BBCA" | "GOLD" | "USD",
-  "qty": <number>,
+  "qty": <number> | null,
   "avg_price": <number> | null,
   "market_value": <number> | null,
   "currency": "IDR" | "USD",
@@ -92,6 +92,7 @@ CRITICAL RULES:
    - Quantity precision tinggi untuk crypto (0.00056349 BTC), sedang untuk gold (9.378 gram), integer untuk saham lot (100).
    - "Available USD Cash $317.85" pattern → holding asset_type=cash, ticker=USD, qty=317.85.
    - Multi-asset (QQQ + BTC + GOLD di same Pluang screen) → semua ke holdings dengan asset_type berbeda.
+   - qty OPTIONAL kalau view summary (Pluang Portfolio "Assets" tab cuma tampilkan market value, qty tidak terlihat). Kalau qty tidak ada, market_value WAJIB diisi.
    - Holding screenshot biasanya tidak ada timestamp transaksi — itu OK.
 
 7. NUMBERS: parse "1.500.000,00" (Indonesian), "1,500,000.00" (US), "Rp35.000", "-$160.57" all correctly into plain numeric form.

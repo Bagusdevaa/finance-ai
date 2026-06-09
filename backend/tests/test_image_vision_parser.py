@@ -4,6 +4,8 @@ Unit tests pakai mocked Groq (selalu jalan).
 Integration live tests dipisah ke test_image_vision_live.py (gated env flag).
 """
 
+from decimal import Decimal
+
 import pytest
 
 
@@ -567,16 +569,21 @@ def test_parse_holding_with_invalid_qty_skipped(monkeypatch):
 		"transactions": [],
 		"holdings": [
 			{"ticker":"VALID","qty":1.5,"avg_price":100,"market_value":150,"currency":"IDR","asset_type":"stock"},
+			# Invalid qty but valid market_value → qty falls back to None, holding KEPT.
 			{"ticker":"BAD","qty":"not a number","avg_price":100,"market_value":150,"currency":"IDR","asset_type":"stock"},
+			# Invalid qty AND no market_value → no useful data, SKIPPED.
+			{"ticker":"NOVAL","qty":"not a number","avg_price":100,"market_value":None,"currency":"IDR","asset_type":"stock"},
 			{"ticker":"","qty":1.0,"avg_price":100,"market_value":100,"currency":"IDR","asset_type":"stock"},
 		],
 		"balance_summary": None,
 	})
 	_patch_vision(monkeypatch, response)
 	result = ImageVisionParser().parse(PNG_HEADER)
-	# Only valid row kept; invalid qty + empty ticker skipped
-	assert len(result.holdings) == 1
+	# VALID + BAD (qty=None but has market_value) kept; NOVAL + empty ticker skipped.
+	assert len(result.holdings) == 2
 	assert result.holdings[0].ticker == "VALID"
+	assert result.holdings[1].ticker == "BAD"
+	assert result.holdings[1].qty is None
 
 
 def test_parse_empty_bytes_returns_empty_parse_result(monkeypatch):
@@ -603,3 +610,50 @@ def test_parse_legacy_response_without_content_type_defaults_unknown(monkeypatch
 	result = ImageVisionParser().parse(PNG_HEADER)
 	assert result.content_type == "unknown"
 	assert len(result.rows) == 1
+
+
+def test_to_parsed_holding_accepts_qty_null():
+	from app.import_data.parsers.image_vision import _to_parsed_holding
+
+	h = _to_parsed_holding(
+		{
+			"ticker": "QQQ",
+			"qty": None,
+			"market_value": 12000000,
+			"currency": "IDR",
+			"asset_type": "stock",
+		},
+		line_no=1,
+	)
+	assert h is not None
+	assert h.qty is None
+	assert h.market_value == Decimal("12000000")
+	assert h.ticker == "QQQ"
+
+
+def test_to_parsed_holding_with_qty_still_works():
+	from app.import_data.parsers.image_vision import _to_parsed_holding
+
+	h = _to_parsed_holding(
+		{"ticker": "GOLD", "qty": 9.378, "market_value": 24454500, "currency": "IDR", "asset_type": "gold"},
+		line_no=1,
+	)
+	assert h is not None
+	assert h.qty == Decimal("9.378")
+
+
+def test_to_parsed_holding_skips_when_qty_and_market_value_both_null():
+	from app.import_data.parsers.image_vision import _to_parsed_holding
+
+	h = _to_parsed_holding(
+		{"ticker": "QQQ", "qty": None, "market_value": None, "currency": "IDR"},
+		line_no=1,
+	)
+	assert h is None
+
+
+def test_to_parsed_holding_skips_when_no_ticker():
+	from app.import_data.parsers.image_vision import _to_parsed_holding
+
+	h = _to_parsed_holding({"ticker": "", "market_value": 100}, line_no=1)
+	assert h is None

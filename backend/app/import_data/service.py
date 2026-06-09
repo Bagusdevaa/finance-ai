@@ -76,7 +76,7 @@ def _holding_to_dict(h) -> dict:
 	return {
 		"line_no": h.line_no,
 		"ticker": h.ticker,
-		"qty": str(h.qty),
+		"qty": str(h.qty) if h.qty is not None else None,
 		"avg_price": str(h.avg_price) if h.avg_price is not None else None,
 		"market_value": str(h.market_value) if h.market_value is not None else None,
 		"currency": h.currency,
