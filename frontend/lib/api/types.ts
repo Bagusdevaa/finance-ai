@@ -252,7 +252,7 @@ export interface BalanceCheck {
 export interface DetectedHolding {
 	line_no: number;
 	ticker: string;
-	qty: string;
+	qty: string | null;
 	avg_price: string | null;
 	market_value: string | null;
 	currency: string;

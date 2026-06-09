@@ -12,6 +12,7 @@ import {
 } from "@/lib/api/import";
 import type { ImportJobDetailResponse, ImportRowResponse } from "@/lib/api/types";
 import { cn } from "@/lib/cn";
+import { formatAmount } from "@/lib/formatRupiah";
 
 const CATEGORIES = [
 	"Makanan",
@@ -34,19 +35,6 @@ function bucketConfidence(score: string | number | null | undefined): ConfBucket
 	if (n >= 0.8) return "ok";
 	if (n >= 0.5) return "warn";
 	return "err";
-}
-
-function fmtRp(amountStr: string): string {
-	const n = parseFloat(amountStr) || 0;
-	const abs = Math.abs(n).toLocaleString("id-ID");
-	return (n >= 0 ? "+Rp " : "−Rp ") + abs;
-}
-
-function fmtRpSigned(amountStr: string): string {
-	const n = parseFloat(amountStr) || 0;
-	const abs = Math.abs(n).toLocaleString("id-ID");
-	if (n === 0) return "Rp 0";
-	return (n > 0 ? "+Rp " : "−Rp ") + abs;
 }
 
 function formatShortDate(iso: string): string {
@@ -156,6 +144,11 @@ export function JobReviewPanel({ jobId, onClose, onConfirmed }: JobReviewPanelPr
 	const isFailed = job.status === "failed";
 	const isReview = job.status === "review";
 	const isDone = job.status === "confirmed";
+	const isEmptyUnknown =
+		(isReview || isDone) &&
+		job.content_type === "unknown" &&
+		(job.items?.length ?? 0) === 0 &&
+		(job.detected_holdings?.length ?? 0) === 0;
 
 	return (
 		<motion.div variants={fadeVariants} initial="hidden" animate="show" exit="exit">
@@ -219,16 +212,31 @@ export function JobReviewPanel({ jobId, onClose, onConfirmed }: JobReviewPanelPr
 								⚠️ Ekstraksi mungkin tidak lengkap atau berlebih
 							</div>
 							<div className="font-mono text-xs text-amber-800">
-								Total transaksi: {fmtRpSigned(job.balance_check.sum_transactions)} · Delta saldo:{" "}
-								{fmtRpSigned(job.balance_check.expected_delta)} · Selisih: {job.balance_check.diff_pct}%
+								Total transaksi: {formatAmount(job.balance_check.sum_transactions, "IDR", { withSign: true })} · Delta saldo:{" "}
+								{formatAmount(job.balance_check.expected_delta, "IDR", { withSign: true })} · Selisih: {job.balance_check.diff_pct}%
 							</div>
 							<div className="mt-1.5 text-xs text-amber-800">
 								Confidence semua row diturunkan ke max 0.70. Periksa dan koreksi sebelum simpan.
 							</div>
 						</div>
 					)}
-					{/* Summary cards */}
-					<div className="mb-6 grid grid-cols-3 border border-gray-200 max-[1100px]:grid-cols-1">
+					{isEmptyUnknown ? (
+						<div className="border border-gray-200 bg-gray-50 px-6 py-10 text-center">
+							<div className="mb-3 text-3xl">🔍</div>
+							<div className="mb-2 font-medium text-gray-950">
+								Tidak ada data finansial terdeteksi
+							</div>
+							<div className="mx-auto mb-4 max-w-md text-[13px] text-gray-600">
+								File ini tidak terlihat seperti statement bank, screenshot transaksi, atau export keuangan.
+							</div>
+							<div className="text-[12px] text-gray-500">
+								Format yang didukung: PDF e-statement · screenshot history e-wallet/invest · CSV/Excel export
+							</div>
+						</div>
+					) : (
+						<>
+						{/* Summary cards */}
+						<div className="mb-6 grid grid-cols-3 border border-gray-200 max-[1100px]:grid-cols-1">
 						<div className="border-r border-gray-200 px-[22px] py-5 max-[1100px]:border-b max-[1100px]:border-r-0">
 							<div className="text-[11px] font-medium uppercase tracking-label text-gray-400">Transaksi</div>
 							<div className="mt-1.5 font-serif text-[32px] font-light leading-[1.1] tracking-tight2 text-gray-950">{totalRows}</div>
@@ -351,7 +359,7 @@ export function JobReviewPanel({ jobId, onClose, onConfirmed }: JobReviewPanelPr
 												)}
 											</td>
 											<td className="px-3.5 py-2.5 text-right">
-												<span className="font-mono tabular-nums text-gray-950">{fmtRp(row.amount)}</span>
+												<span className="font-mono tabular-nums text-gray-950">{formatAmount(row.amount, row.currency, { withSign: true })}</span>
 											</td>
 											<td className="px-3.5 py-2.5">
 												<span className="font-mono text-[11px] text-gray-500">{Number(row.confidence_score).toFixed(2)}</span>
@@ -389,12 +397,13 @@ export function JobReviewPanel({ jobId, onClose, onConfirmed }: JobReviewPanelPr
 								</a>
 							</div>
 							<div className="overflow-x-auto">
-								<table className="w-full min-w-[640px] border-collapse text-[12px]">
+								<table className="w-full min-w-[720px] border-collapse text-[12px]">
 									<thead>
 										<tr>
 											<th className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-left text-[10px] font-medium uppercase tracking-label text-gray-400">Ticker</th>
 											<th className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-right text-[10px] font-medium uppercase tracking-label text-gray-400">Qty</th>
 											<th className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-right text-[10px] font-medium uppercase tracking-label text-gray-400">Avg Price</th>
+											<th className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-right text-[10px] font-medium uppercase tracking-label text-gray-400">Market Value</th>
 											<th className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-left text-[10px] font-medium uppercase tracking-label text-gray-400">Currency</th>
 											<th className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-left text-[10px] font-medium uppercase tracking-label text-gray-400">Type</th>
 										</tr>
@@ -403,10 +412,9 @@ export function JobReviewPanel({ jobId, onClose, onConfirmed }: JobReviewPanelPr
 										{job.detected_holdings.map((h, i) => (
 											<tr key={i} className="border-b border-gray-100 last:border-b-0">
 												<td className="px-4 py-2 font-mono text-gray-950">{h.ticker}</td>
-												<td className="px-4 py-2 text-right font-mono">{h.qty}</td>
-												<td className="px-4 py-2 text-right font-mono">
-													{h.avg_price ? fmtRp(h.avg_price) : "—"}
-												</td>
+												<td className="px-4 py-2 text-right font-mono">{h.qty ?? "—"}</td>
+												<td className="px-4 py-2 text-right font-mono">{formatAmount(h.avg_price, h.currency)}</td>
+												<td className="px-4 py-2 text-right font-mono">{formatAmount(h.market_value, h.currency)}</td>
 												<td className="px-4 py-2 font-mono text-gray-600">{h.currency}</td>
 												<td className="px-4 py-2 text-gray-600">{h.asset_type}</td>
 											</tr>
@@ -439,6 +447,8 @@ export function JobReviewPanel({ jobId, onClose, onConfirmed }: JobReviewPanelPr
 								Batal
 							</button>
 						</div>
+					)}
+						</>
 					)}
 				</>
 			)}
