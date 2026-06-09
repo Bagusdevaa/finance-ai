@@ -161,27 +161,27 @@ def _parser():
 
 
 def test_parse_oct_2025_count():
-	rows = _parser().parse(_load_fixture("bni-2025-10.pdf"))
+	rows = _parser().parse(_load_fixture("bni-2025-10.pdf")).rows
 	assert len(rows) == 57
 
 
 def test_parse_nov_2025_count():
-	rows = _parser().parse(_load_fixture("bni-2025-11.pdf"))
+	rows = _parser().parse(_load_fixture("bni-2025-11.pdf")).rows
 	assert len(rows) == 37
 
 
 def test_parse_feb_2026_count():
-	rows = _parser().parse(_load_fixture("bni-2026-02.pdf"))
+	rows = _parser().parse(_load_fixture("bni-2026-02.pdf")).rows
 	assert len(rows) == 35
 
 
 def test_parse_apr_2026_count():
-	rows = _parser().parse(_load_fixture("bni-2026-04.pdf"))
+	rows = _parser().parse(_load_fixture("bni-2026-04.pdf")).rows
 	assert len(rows) == 47
 
 
 def test_parse_oct_2025_dates_in_range():
-	rows = _parser().parse(_load_fixture("bni-2025-10.pdf"))
+	rows = _parser().parse(_load_fixture("bni-2025-10.pdf")).rows
 	for r in rows:
 		assert r.transaction_date.year == 2025
 		assert r.transaction_date.month == 10
@@ -193,7 +193,7 @@ def test_parse_oct_2025_signs_match_summary():
 
 	bni-2025-10.pdf: Total Pemasukan +13,687,644 / Total Pengeluaran -13,706,648.
 	"""
-	rows = _parser().parse(_load_fixture("bni-2025-10.pdf"))
+	rows = _parser().parse(_load_fixture("bni-2025-10.pdf")).rows
 	total_in = sum((r.amount for r in rows if r.amount > 0), Decimal("0"))
 	total_out = sum((r.amount for r in rows if r.amount < 0), Decimal("0"))
 	assert total_in == Decimal("13687644")
@@ -201,7 +201,7 @@ def test_parse_oct_2025_signs_match_summary():
 
 
 def test_parse_oct_2025_first_tx_correct():
-	rows = _parser().parse(_load_fixture("bni-2025-10.pdf"))
+	rows = _parser().parse(_load_fixture("bni-2025-10.pdf")).rows
 	first = rows[0]
 	assert first.line_no == 1
 	assert first.transaction_date == date(2025, 10, 1)
@@ -212,7 +212,7 @@ def test_parse_oct_2025_first_tx_correct():
 
 def test_parse_categorizer_pemasukan_special_case():
 	"""Description 'MANDIRI -' (exact, no name) → 'Pemasukan' via existing categorizer."""
-	rows = _parser().parse(_load_fixture("bni-2025-10.pdf"))
+	rows = _parser().parse(_load_fixture("bni-2025-10.pdf")).rows
 	mandiri_rows = [r for r in rows if r.description and r.description.strip().upper() == "MANDIRI -"]
 	assert len(mandiri_rows) >= 1
 	for r in mandiri_rows:
@@ -223,7 +223,7 @@ def test_parse_categorizer_biaya_fallback():
 	"""Tx dengan deskripsi generic 'Admin Kartu' / 'EWALLET TOP UP GOPAY' bisa
 	dapat 'Biaya Bank' via BNI fallback (kalau categorizer tidak match).
 	"""
-	rows = _parser().parse(_load_fixture("bni-2025-10.pdf"))
+	rows = _parser().parse(_load_fixture("bni-2025-10.pdf")).rows
 	# Cari row dengan amount kecil negatif yang punya BNI category 'Biaya'.
 	# Setidaknya ada beberapa biaya transfer / admin di sample.
 	biaya_bank_rows = [r for r in rows if r.category == "Biaya Bank"]
@@ -231,15 +231,15 @@ def test_parse_categorizer_biaya_fallback():
 
 
 def test_parse_empty_bytes_returns_empty():
-	assert _parser().parse(b"") == []
+	assert _parser().parse(b"").rows == []
 
 
 def test_parse_garbage_bytes_returns_empty():
-	assert _parser().parse(b"this is not a PDF file") == []
+	assert _parser().parse(b"this is not a PDF file").rows == []
 
 
 def test_parse_raw_text_includes_three_lines():
-	rows = _parser().parse(_load_fixture("bni-2025-10.pdf"))
+	rows = _parser().parse(_load_fixture("bni-2025-10.pdf")).rows
 	# raw_text harus berisi tanggal, jam, dan amount line — pakai separator.
 	first = rows[0]
 	assert " | " in first.raw_text

@@ -42,6 +42,13 @@ function fmtRp(amountStr: string): string {
 	return (n >= 0 ? "+Rp " : "−Rp ") + abs;
 }
 
+function fmtRpSigned(amountStr: string): string {
+	const n = parseFloat(amountStr) || 0;
+	const abs = Math.abs(n).toLocaleString("id-ID");
+	if (n === 0) return "Rp 0";
+	return (n > 0 ? "+Rp " : "−Rp ") + abs;
+}
+
 function formatShortDate(iso: string): string {
 	try {
 		return new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short" }).format(new Date(iso));
@@ -206,6 +213,20 @@ export function JobReviewPanel({ jobId, onClose, onConfirmed }: JobReviewPanelPr
 
 			{(isReview || isDone) && (
 				<>
+					{job.balance_check && !job.balance_check.matches && (
+						<div className="mb-5 border border-amber-300 bg-amber-50 px-4 py-3 text-[13px]">
+							<div className="mb-1 font-medium text-amber-900">
+								⚠️ Ekstraksi mungkin tidak lengkap atau berlebih
+							</div>
+							<div className="font-mono text-xs text-amber-800">
+								Total transaksi: {fmtRpSigned(job.balance_check.sum_transactions)} · Delta saldo:{" "}
+								{fmtRpSigned(job.balance_check.expected_delta)} · Selisih: {job.balance_check.diff_pct}%
+							</div>
+							<div className="mt-1.5 text-xs text-amber-800">
+								Confidence semua row diturunkan ke max 0.70. Periksa dan koreksi sebelum simpan.
+							</div>
+						</div>
+					)}
 					{/* Summary cards */}
 					<div className="mb-6 grid grid-cols-3 border border-gray-200 max-[1100px]:grid-cols-1">
 						<div className="border-r border-gray-200 px-[22px] py-5 max-[1100px]:border-b max-[1100px]:border-r-0">
@@ -353,6 +374,51 @@ export function JobReviewPanel({ jobId, onClose, onConfirmed }: JobReviewPanelPr
 							</tbody>
 						</table>
 					</div>
+
+					{job.detected_holdings && job.detected_holdings.length > 0 && (
+						<div className="mt-6 border border-gray-200">
+							<div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-3">
+								<div className="text-[11px] font-medium uppercase tracking-label text-gray-500">
+									Detected Holdings ({job.detected_holdings.length})
+								</div>
+								<a
+									href="/assets"
+									className="text-[11px] text-gray-700 underline hover:text-gray-950"
+								>
+									Buka Holdings page →
+								</a>
+							</div>
+							<div className="overflow-x-auto">
+								<table className="w-full min-w-[640px] border-collapse text-[12px]">
+									<thead>
+										<tr>
+											<th className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-left text-[10px] font-medium uppercase tracking-label text-gray-400">Ticker</th>
+											<th className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-right text-[10px] font-medium uppercase tracking-label text-gray-400">Qty</th>
+											<th className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-right text-[10px] font-medium uppercase tracking-label text-gray-400">Avg Price</th>
+											<th className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-left text-[10px] font-medium uppercase tracking-label text-gray-400">Currency</th>
+											<th className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-left text-[10px] font-medium uppercase tracking-label text-gray-400">Type</th>
+										</tr>
+									</thead>
+									<tbody>
+										{job.detected_holdings.map((h, i) => (
+											<tr key={i} className="border-b border-gray-100 last:border-b-0">
+												<td className="px-4 py-2 font-mono text-gray-950">{h.ticker}</td>
+												<td className="px-4 py-2 text-right font-mono">{h.qty}</td>
+												<td className="px-4 py-2 text-right font-mono">
+													{h.avg_price ? fmtRp(h.avg_price) : "—"}
+												</td>
+												<td className="px-4 py-2 font-mono text-gray-600">{h.currency}</td>
+												<td className="px-4 py-2 text-gray-600">{h.asset_type}</td>
+											</tr>
+										))}
+									</tbody>
+								</table>
+							</div>
+							<div className="border-t border-gray-200 bg-gray-50 px-4 py-2 text-[10px] text-gray-500">
+								Detected dari upload kamu. Klik &quot;Buka Holdings page&quot; untuk input manual ke portfolio.
+							</div>
+						</div>
+					)}
 
 					{isReview && (
 						<div className="mt-5 flex flex-wrap items-center gap-3">

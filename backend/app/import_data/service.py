@@ -6,7 +6,7 @@ process_job buka session sendiri karena di-trigger via BackgroundTasks
 """
 
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from uuid import UUID
 
@@ -27,7 +27,9 @@ from app.import_data.models import (
 	ImportSourceType,
 )
 from app.import_data.dispatcher import dispatch
+from app.import_data.parsers.base import ParseResult
 from app.import_data.schemas import ImportConfirmResponse, ImportRowUpdate
+from app.import_data.validation import apply_balance_warning, run_balance_check
 from app.transactions.models import Transaction, TransactionSource
 from app.users.models import User
 
@@ -52,6 +54,35 @@ async def _verify_account_owned(
 			code="ACCOUNT_NOT_OWNED",
 			message="Account does not exist or not owned by user",
 		)
+
+
+def _balance_check_to_dict(bc) -> dict | None:
+	"""Serialize BalanceCheck dataclass to JSON-safe dict for JSONB storage."""
+	if bc is None:
+		return None
+	return {
+		"saldo_awal": str(bc.saldo_awal),
+		"saldo_akhir": str(bc.saldo_akhir),
+		"sum_transactions": str(bc.sum_transactions),
+		"expected_delta": str(bc.expected_delta),
+		"actual_delta": str(bc.actual_delta),
+		"matches": bool(bc.matches),
+		"diff_pct": str(bc.diff_pct),
+	}
+
+
+def _holding_to_dict(h) -> dict:
+	"""Serialize ParsedHolding dataclass to JSON-safe dict."""
+	return {
+		"line_no": h.line_no,
+		"ticker": h.ticker,
+		"qty": str(h.qty),
+		"avg_price": str(h.avg_price) if h.avg_price is not None else None,
+		"market_value": str(h.market_value) if h.market_value is not None else None,
+		"currency": h.currency,
+		"asset_type": h.asset_type,
+		"confidence_score": str(h.confidence_score),
+	}
 
 
 def _source_to_transaction_source(src: ImportSourceType) -> TransactionSource:
@@ -173,12 +204,37 @@ async def process_job(job_id: UUID) -> None:
 		try:
 			file_bytes = (UPLOADS_ROOT / job.file_path).read_bytes()
 			parser = dispatch(file_bytes)
-			parsed = parser.parse(file_bytes)
+			result: ParseResult = parser.parse(file_bytes)
 		except Exception as exc:
 			job.status = ImportJobStatus.failed
 			job.error_message = str(exc)[:500]
 			await session.commit()
 			return
+
+		# Phase 4: extract balance_summary attached by parser (if any), run math-check
+		balance_summary_raw = getattr(result, "_balance_summary_raw", None)
+		saldo_awal = saldo_akhir = None
+		if isinstance(balance_summary_raw, dict):
+			try:
+				if balance_summary_raw.get("saldo_awal") is not None:
+					saldo_awal = Decimal(str(balance_summary_raw["saldo_awal"]))
+				if balance_summary_raw.get("saldo_akhir") is not None:
+					saldo_akhir = Decimal(str(balance_summary_raw["saldo_akhir"]))
+			except (InvalidOperation, ValueError):
+				saldo_awal = saldo_akhir = None
+
+		balance_check = run_balance_check(result.rows, saldo_awal, saldo_akhir)
+		if balance_check is not None and not balance_check.matches:
+			apply_balance_warning(result.rows)
+
+		# Persist Phase 4 metadata
+		job.content_type = result.content_type
+		job.balance_check = _balance_check_to_dict(balance_check)
+		job.detected_holdings = (
+			[_holding_to_dict(h) for h in result.holdings] if result.holdings else None
+		)
+
+		parsed = result.rows
 
 		rows_ok = rows_warn = rows_err = 0
 		for p in parsed:

@@ -39,8 +39,8 @@ def test_live_bni_pdf_routes_to_pdf_bni(monkeypatch):
 	parser = dispatch(_load("bni/bni-2025-10.pdf"))
 	assert isinstance(parser, PdfBniParser)
 	# Actually parse to confirm extraction still works (expected 57 rows from Phase 1).
-	rows = parser.parse(_load("bni/bni-2025-10.pdf"))
-	assert len(rows) == 57
+	result = parser.parse(_load("bni/bni-2025-10.pdf"))
+	assert len(result.rows) == 57
 
 
 def test_live_dana_image_routes_to_image_vision():
@@ -51,8 +51,8 @@ def test_live_dana_image_routes_to_image_vision():
 	file_bytes = _load("vision/ewallet/dana-list-1.jpeg")
 	parser = dispatch(file_bytes)
 	assert isinstance(parser, ImageVisionParser)
-	rows = parser.parse(file_bytes)
-	assert len(rows) >= 5, f"Expected at least 5 rows, got {len(rows)}"
+	result = parser.parse(file_bytes)
+	assert len(result.rows) >= 5, f"Expected at least 5 rows, got {len(result.rows)}"
 
 
 def test_live_mandiri_pdf_via_rasterize_vision():
@@ -69,7 +69,8 @@ def test_live_mandiri_pdf_via_rasterize_vision():
 	file_bytes = _load("mandiri/mandiri-statement.pdf")
 	parser = dispatch(file_bytes)
 	assert isinstance(parser, PdfVisionParser)
-	rows = parser.parse(file_bytes)
+	result = parser.parse(file_bytes)
+	rows = result.rows
 	assert 1 <= len(rows) <= 4, (
 		f"Mandiri sample has 2 admin-fee txs; expected 1-4 rows, got {len(rows)}"
 	)
@@ -97,7 +98,8 @@ def test_live_permata_pdf_via_rasterize_vision():
 	file_bytes = _load("permata/permatabank-statement.pdf")
 	parser = dispatch(file_bytes)
 	assert isinstance(parser, PdfVisionParser)
-	rows = parser.parse(file_bytes)
+	result = parser.parse(file_bytes)
+	rows = result.rows
 	# Permata 0-tx period: expect 0 rows, tolerate up to 2 for vision variance.
 	assert 0 <= len(rows) <= 2, (
 		f"Permata sample period has 0 real txs; expected 0-2 rows "
@@ -118,5 +120,5 @@ def test_live_csv_bytes_routes_to_manual_csv():
 	)
 	parser = dispatch(csv)
 	assert isinstance(parser, ManualCsvParser)
-	rows = parser.parse(csv)
-	assert len(rows) == 2
+	result = parser.parse(csv)
+	assert len(result.rows) == 2

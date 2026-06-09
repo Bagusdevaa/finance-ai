@@ -24,7 +24,12 @@ from decimal import Decimal, InvalidOperation
 from app.ai.groq_client import vision_complete
 from app.ai.vision_prompts import SYSTEM_PROMPT, USER_PROMPT
 from app.import_data.models import ImportSourceType
-from app.import_data.parsers.base import ParsedRow, register
+from app.import_data.parsers.base import (
+	ParsedHolding,
+	ParsedRow,
+	ParseResult,
+	register,
+)
 
 
 # ---------- Constants ----------
@@ -49,24 +54,17 @@ def _detect_image_mime(file_bytes: bytes) -> str | None:
 	return None
 
 
-def _parse_vision_response(raw: str) -> list[dict]:
-	"""Parse JSON dari vision LLM. Return list of tx dicts.
-
-	Graceful: malformed JSON, missing 'transactions' key, atau non-list value
-	→ return [] (caller akan treat sebagai 'no rows extracted').
-	"""
+def _parse_vision_response_obj(raw: str) -> dict | None:
+	"""Parse JSON dari vision LLM. Return dict (full response) or None on bad JSON."""
 	if not raw:
-		return []
+		return None
 	try:
 		obj = json.loads(raw)
 	except json.JSONDecodeError:
-		return []
+		return None
 	if not isinstance(obj, dict):
-		return []
-	items = obj.get("transactions")
-	if not isinstance(items, list):
-		return []
-	return items
+		return None
+	return obj
 
 
 def _compute_confidence(item: dict) -> Decimal:
@@ -143,19 +141,72 @@ def _to_parsed_row(item: dict, line_no: int) -> ParsedRow | None:
 	)
 
 
-# ---------- Parser class (parse() implemented in Task 5) ----------
+def _to_parsed_holding(item: dict, line_no: int) -> ParsedHolding | None:
+	"""Convert one vision JSON holding item to ParsedHolding. Return None if invalid."""
+	ticker = (item.get("ticker") or "").strip() if item.get("ticker") is not None else ""
+	if not ticker:
+		return None
+
+	# qty: required, must be numeric
+	qty_raw = item.get("qty")
+	if qty_raw is None:
+		return None
+	try:
+		qty = Decimal(str(qty_raw))
+	except (InvalidOperation, ValueError):
+		return None
+	if qty == 0:
+		return None
+
+	# avg_price: optional
+	avg_price = None
+	if item.get("avg_price") is not None:
+		try:
+			avg_price = Decimal(str(item["avg_price"]))
+		except (InvalidOperation, ValueError):
+			pass
+
+	# market_value: optional
+	market_value = None
+	if item.get("market_value") is not None:
+		try:
+			market_value = Decimal(str(item["market_value"]))
+		except (InvalidOperation, ValueError):
+			pass
+
+	currency_raw = item.get("currency") or "IDR"
+	currency = currency_raw if currency_raw in _VALID_CURRENCIES else "IDR"
+
+	asset_type_raw = (item.get("asset_type") or "unknown").strip()
+	valid_asset_types = {"stock", "crypto", "gold", "cash", "unknown"}
+	asset_type = asset_type_raw if asset_type_raw in valid_asset_types else "unknown"
+
+	return ParsedHolding(
+		line_no=line_no,
+		ticker=ticker,
+		qty=qty,
+		avg_price=avg_price,
+		market_value=market_value,
+		currency=currency,
+		asset_type=asset_type,
+		confidence_score=Decimal("1.00"),
+		raw_text=json.dumps(item, ensure_ascii=False),
+	)
+
+
+# ---------- Parser class ----------
 
 @register(ImportSourceType.image_vision.value)
 class ImageVisionParser:
-	def parse(self, file_bytes: bytes) -> list[ParsedRow]:
+	def parse(self, file_bytes: bytes) -> ParseResult:
 		# Input validation: short-circuit before calling LLM.
 		if not file_bytes:
-			return []
+			return ParseResult()
 		if len(file_bytes) > _MAX_SIZE_BYTES:
-			return []
+			return ParseResult()
 		mime = _detect_image_mime(file_bytes)
 		if mime is None:
-			return []
+			return ParseResult()
 
 		image_b64 = base64.b64encode(file_bytes).decode("ascii")
 
@@ -177,11 +228,10 @@ class ImageVisionParser:
 				user_prompt=USER_PROMPT,
 			)
 
-		items = _parse_vision_response(raw)
+		obj = _parse_vision_response_obj(raw)
 
-		# If JSON parsing failed (empty items but raw was non-empty non-empty-array),
-		# retry once with corrective prompt prefix.
-		if not items and raw and raw.strip() not in ('{"transactions":[]}', '{"transactions": []}'):
+		# Retry once on bad JSON with corrective prompt.
+		if obj is None:
 			retry_prompt = (
 				"Your previous response could not be parsed as JSON. "
 				"Output STRICT JSON only, matching the schema. "
@@ -194,18 +244,53 @@ class ImageVisionParser:
 					system_prompt=SYSTEM_PROMPT,
 					user_prompt=retry_prompt,
 				)
-				items = _parse_vision_response(raw)
+				obj = _parse_vision_response_obj(raw)
 			except Exception:
-				return []
+				return ParseResult()
+			if obj is None:
+				return ParseResult()
 
-		# Map items → ParsedRow, skip invalid rows, reassign line_no by valid index.
+		# Parse content_type with fallback to "unknown"
+		content_type_raw = obj.get("content_type", "unknown")
+		valid_content_types = {"statement", "receipt", "holding", "unknown"}
+		content_type = content_type_raw if content_type_raw in valid_content_types else "unknown"
+
+		# Map transactions → ParsedRow list
+		tx_items = obj.get("transactions") or []
+		if not isinstance(tx_items, list):
+			tx_items = []
 		rows: list[ParsedRow] = []
 		next_line_no = 1
-		for item in items:
+		for item in tx_items:
 			if not isinstance(item, dict):
 				continue
 			row = _to_parsed_row(item, line_no=next_line_no)
 			if row is not None:
 				rows.append(row)
 				next_line_no += 1
-		return rows
+
+		# Map holdings → ParsedHolding list
+		holding_items = obj.get("holdings") or []
+		if not isinstance(holding_items, list):
+			holding_items = []
+		holdings: list[ParsedHolding] = []
+		next_h_line_no = 1
+		for item in holding_items:
+			if not isinstance(item, dict):
+				continue
+			h = _to_parsed_holding(item, line_no=next_h_line_no)
+			if h is not None:
+				holdings.append(h)
+				next_h_line_no += 1
+
+		# Attach balance_summary raw dict as attribute for service layer (no BalanceCheck yet)
+		result = ParseResult(
+			rows=rows,
+			holdings=holdings,
+			content_type=content_type,
+		)
+		balance_summary = obj.get("balance_summary")
+		if isinstance(balance_summary, dict):
+			# Stash raw for service layer to convert to BalanceCheck via validation.run_balance_check
+			result._balance_summary_raw = balance_summary  # type: ignore[attr-defined]
+		return result

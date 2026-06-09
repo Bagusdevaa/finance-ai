@@ -22,7 +22,7 @@ from sqlalchemy import (
 	Text,
 )
 from sqlalchemy import Enum as SAEnum
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.base_model import (
@@ -98,6 +98,11 @@ class ImportJob(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
 		DateTime(timezone=True),
 		nullable=True,
 	)
+
+	# Phase 4: classify + math-check + holdings detection
+	content_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+	balance_check: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+	detected_holdings: Mapped[list | None] = mapped_column(JSONB, nullable=True)
 
 	rows: Mapped[list["ImportRow"]] = relationship(
 		"ImportRow",

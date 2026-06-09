@@ -239,8 +239,32 @@ export interface ImportRowResponse {
 	is_excluded: boolean;
 }
 
+export interface BalanceCheck {
+	saldo_awal: string;
+	saldo_akhir: string;
+	sum_transactions: string;
+	expected_delta: string;
+	actual_delta: string;
+	matches: boolean;
+	diff_pct: string;
+}
+
+export interface DetectedHolding {
+	line_no: number;
+	ticker: string;
+	qty: string;
+	avg_price: string | null;
+	market_value: string | null;
+	currency: string;
+	asset_type: string;
+	confidence_score: string;
+}
+
 export interface ImportJobDetailResponse extends ImportJobResponse {
 	items: ImportRowResponse[];
+	content_type: string | null;
+	balance_check: BalanceCheck | null;
+	detected_holdings: DetectedHolding[] | null;
 }
 
 export interface ImportRowUpdate {

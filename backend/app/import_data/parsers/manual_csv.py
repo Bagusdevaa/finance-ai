@@ -35,7 +35,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 from app.import_data.models import ImportSourceType
-from app.import_data.parsers.base import ParsedRow, register
+from app.import_data.parsers.base import ParsedRow, ParseResult, register
 
 
 _DATE_FORMATS = (
@@ -169,7 +169,7 @@ def _resolve_amount(
 
 @register(ImportSourceType.manual_csv.value)
 class ManualCsvParser:
-	def parse(self, file_bytes: bytes) -> list[ParsedRow]:
+	def parse(self, file_bytes: bytes) -> ParseResult:
 		text = file_bytes.decode("utf-8-sig", errors="replace")
 		text = text.replace("\r\n", "\n").replace("\r", "\n")
 		delimiter = _detect_delimiter(text)
@@ -179,12 +179,12 @@ class ManualCsvParser:
 
 		# Minimum yang dibutuhkan: date + (amount atau debit/credit).
 		if "date" not in headers:
-			return []
+			return ParseResult()
 		has_amount_source = (
 			"amount" in headers or ("debit" in headers and "credit" in headers)
 		)
 		if not has_amount_source:
-			return []
+			return ParseResult()
 
 		rows: list[ParsedRow] = []
 		for i, raw in enumerate(reader, start=2):
@@ -211,7 +211,7 @@ class ManualCsvParser:
 				)
 			except (KeyError, ValueError, InvalidOperation):
 				continue
-		return rows
+		return ParseResult(rows=rows)
 
 
 def _pick(

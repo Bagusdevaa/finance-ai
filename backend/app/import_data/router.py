@@ -84,6 +84,9 @@ async def get_job(
 		confirmed_at=job.confirmed_at,
 		error_message=job.error_message,
 		items=[ImportRowResponse.model_validate(r) for r in rows],
+		content_type=job.content_type,
+		balance_check=job.balance_check,
+		detected_holdings=job.detected_holdings,
 	)
 
 
