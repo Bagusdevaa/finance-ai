@@ -31,6 +31,7 @@ from app.import_data.dispatcher import dispatch
 from app.import_data.parsers.base import ParseResult
 from app.import_data.parsers.sniff import sniff_mime
 from app.import_data.csv_normalizer import (
+	Recipe,
 	compute_fingerprint,
 	read_csv_rows,
 	run_normalize,
@@ -93,9 +94,7 @@ def _holding_to_dict(h) -> dict:
 
 
 async def _get_cached_recipe(session, fingerprint: str):
-	"""Return a Recipe from cache, or None. Imported lazily to avoid a cycle."""
-	from app.import_data.csv_normalizer import Recipe
-
+	"""Return a Recipe from cache, or None."""
 	row = await session.scalar(
 		select(ImportRecipe).where(ImportRecipe.fingerprint == fingerprint)
 	)
