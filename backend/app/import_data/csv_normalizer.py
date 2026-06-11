@@ -19,6 +19,7 @@ from app.ai.recipe_prompts import RECIPE_SYSTEM_PROMPT, build_recipe_user_prompt
 
 from app.import_data.parsers.base import ParsedRow, ParseResult
 from app.import_data.parsers.manual_csv import (
+	ManualCsvParser,
 	_detect_delimiter,
 	_detect_header_row_index,
 	_parse_amount,
@@ -337,3 +338,49 @@ def infer_recipe(header_cols: list[str], sample_rows: list[list[str]]) -> Recipe
 	if obj is None:
 		raise RecipeInferenceError("LLM did not return valid JSON")
 	return Recipe.from_llm_json(obj)
+
+
+@dataclass
+class NormalizeOutcome:
+	result: ParseResult
+	recipe_to_save: Recipe | None
+	used_fallback: bool
+
+
+def _fallback(file_bytes: bytes) -> ParseResult:
+	return ManualCsvParser().parse(file_bytes)
+
+
+def run_normalize(
+	file_bytes: bytes,
+	all_rows: list[list[str]],
+	header_idx: int,
+	cached: Recipe | None,
+) -> NormalizeOutcome:
+	"""Decide recipe source & apply. Pure except for infer_recipe (LLM) and the
+	manual_csv fallback — both deterministic enough to unit-test with mocks."""
+	if not all_rows:
+		return NormalizeOutcome(ParseResult(), None, True)
+
+	# 1. Usable cached recipe → apply, no LLM.
+	if cached is not None and cached.schema_version == RECIPE_SCHEMA_VERSION:
+		result = apply_recipe(all_rows, header_idx, cached)
+		if result.rows:
+			return NormalizeOutcome(result, None, False)
+		# 0 rows → self-heal by re-inferring below.
+
+	# 2. Infer a fresh recipe.
+	header_cols = all_rows[header_idx]
+	try:
+		recipe = infer_recipe(header_cols, _sample_rows(all_rows, header_idx))
+	except RecipeInferenceError:
+		return NormalizeOutcome(_fallback(file_bytes), None, True)
+
+	if recipe.confidence < CONFIDENCE_FLOOR:
+		return NormalizeOutcome(_fallback(file_bytes), None, True)
+
+	result = apply_recipe(all_rows, header_idx, recipe)
+	if not result.rows:
+		return NormalizeOutcome(_fallback(file_bytes), None, True)
+
+	return NormalizeOutcome(result, recipe, False)

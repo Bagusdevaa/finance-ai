@@ -218,3 +218,61 @@ def test_infer_recipe_raises_after_repeated_bad_json(monkeypatch):
 	monkeypatch.setattr(cn, "text_complete", lambda *a, **k: "still not json")
 	with pytest.raises(RecipeInferenceError):
 		cn.infer_recipe(["d", "a"], [["2026-01-01", "100"]])
+
+
+def _simple_rows():
+	# date+amount alias-mappable so manual_csv fallback also works.
+	return [
+		["date", "amount", "merchant"],
+		["2026-01-01", "-1000", "Gojek"],
+		["2026-01-02", "5000", "Gaji"],
+	]
+
+
+def test_run_normalize_cache_hit_skips_llm(monkeypatch):
+	def boom(*a, **k):
+		raise AssertionError("LLM must not be called on cache hit")
+
+	monkeypatch.setattr(cn, "infer_recipe", boom)
+	cached = Recipe.from_llm_json(
+		{"date": {"column": "date"}, "amount": {"column": "amount"}, "merchant": {"column": "merchant"}, "confidence": 0.9}
+	)
+	rows = _simple_rows()
+	outcome = cn.run_normalize(b"unused", rows, 0, cached)
+	assert outcome.used_fallback is False
+	assert outcome.recipe_to_save is None  # cache hit → nothing new to save
+	assert len(outcome.result.rows) == 2
+
+
+def test_run_normalize_miss_infers_and_saves(monkeypatch):
+	inferred = Recipe.from_llm_json(
+		{"date": {"column": "date"}, "amount": {"column": "amount"}, "confidence": 0.9}
+	)
+	monkeypatch.setattr(cn, "infer_recipe", lambda *a, **k: inferred)
+	outcome = cn.run_normalize(b"unused", _simple_rows(), 0, None)
+	assert outcome.used_fallback is False
+	assert outcome.recipe_to_save is inferred
+	assert len(outcome.result.rows) == 2
+
+
+def test_run_normalize_low_confidence_falls_back(monkeypatch):
+	weak = Recipe.from_llm_json(
+		{"date": {"column": "date"}, "amount": {"column": "amount"}, "confidence": 0.2}
+	)
+	monkeypatch.setattr(cn, "infer_recipe", lambda *a, **k: weak)
+	csv_bytes = b"date,amount,merchant\n2026-01-01,-1000,Gojek\n2026-01-02,5000,Gaji\n"
+	outcome = cn.run_normalize(csv_bytes, _simple_rows(), 0, None)
+	assert outcome.used_fallback is True
+	assert outcome.recipe_to_save is None
+	assert len(outcome.result.rows) == 2  # manual_csv fallback parsed it
+
+
+def test_run_normalize_inference_error_falls_back(monkeypatch):
+	def fail(*a, **k):
+		raise RecipeInferenceError("boom")
+
+	monkeypatch.setattr(cn, "infer_recipe", fail)
+	csv_bytes = b"date,amount,merchant\n2026-01-01,-1000,Gojek\n"
+	outcome = cn.run_normalize(csv_bytes, _simple_rows(), 0, None)
+	assert outcome.used_fallback is True
+	assert len(outcome.result.rows) == 1

@@ -25,9 +25,16 @@ from app.import_data.models import (
 	ImportJobStatus,
 	ImportRow,
 	ImportSourceType,
+	ImportRecipe,
 )
 from app.import_data.dispatcher import dispatch
 from app.import_data.parsers.base import ParseResult
+from app.import_data.parsers.sniff import sniff_mime
+from app.import_data.csv_normalizer import (
+	compute_fingerprint,
+	read_csv_rows,
+	run_normalize,
+)
 from app.import_data.schemas import ImportConfirmResponse, ImportRowUpdate
 from app.import_data.validation import apply_balance_warning, run_balance_check
 from app.transactions.models import Transaction, TransactionSource
@@ -83,6 +90,53 @@ def _holding_to_dict(h) -> dict:
 		"asset_type": h.asset_type,
 		"confidence_score": str(h.confidence_score),
 	}
+
+
+async def _get_cached_recipe(session, fingerprint: str):
+	"""Return a Recipe from cache, or None. Imported lazily to avoid a cycle."""
+	from app.import_data.csv_normalizer import Recipe
+
+	row = await session.scalar(
+		select(ImportRecipe).where(ImportRecipe.fingerprint == fingerprint)
+	)
+	if row is None:
+		return None
+	return Recipe.from_cache(row.recipe_json, row.schema_version)
+
+
+async def _upsert_recipe(session, fingerprint: str, recipe) -> None:
+	row = await session.scalar(
+		select(ImportRecipe).where(ImportRecipe.fingerprint == fingerprint)
+	)
+	conf = Decimal(str(recipe.confidence))
+	if row is None:
+		session.add(
+			ImportRecipe(
+				fingerprint=fingerprint,
+				source_label=recipe.source_label,
+				recipe_json=recipe.to_json(),
+				schema_version=recipe.schema_version,
+				confidence=conf,
+			)
+		)
+	else:
+		row.source_label = recipe.source_label
+		row.recipe_json = recipe.to_json()
+		row.schema_version = recipe.schema_version
+		row.confidence = conf
+
+
+async def normalize_csv(file_bytes: bytes, session) -> ParseResult:
+	"""CSV import via AI normalizer. Fingerprint → cache → infer/apply → fallback."""
+	all_rows, header_idx, delimiter = read_csv_rows(file_bytes)
+	if not all_rows:
+		return ParseResult()
+	fingerprint = compute_fingerprint(all_rows[header_idx], delimiter)
+	cached = await _get_cached_recipe(session, fingerprint)
+	outcome = run_normalize(file_bytes, all_rows, header_idx, cached)
+	if outcome.recipe_to_save is not None:
+		await _upsert_recipe(session, fingerprint, outcome.recipe_to_save)
+	return outcome.result
 
 
 def _source_to_transaction_source(src: ImportSourceType) -> TransactionSource:
@@ -203,8 +257,11 @@ async def process_job(job_id: UUID) -> None:
 
 		try:
 			file_bytes = (UPLOADS_ROOT / job.file_path).read_bytes()
-			parser = dispatch(file_bytes)
-			result: ParseResult = parser.parse(file_bytes)
+			if sniff_mime(file_bytes) == "text/csv":
+				result: ParseResult = await normalize_csv(file_bytes, session)
+			else:
+				parser = dispatch(file_bytes)
+				result = parser.parse(file_bytes)
 		except Exception as exc:
 			job.status = ImportJobStatus.failed
 			job.error_message = str(exc)[:500]
