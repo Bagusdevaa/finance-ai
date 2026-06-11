@@ -6,6 +6,7 @@ from app.import_data.parsers import (  # noqa: F401
 	image_vision,
 	manual_csv,
 	pdf_bca,
+	pdf_bni,
 	pdf_bri,
 	pdf_mandiri,
 )

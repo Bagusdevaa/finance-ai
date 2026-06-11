@@ -72,7 +72,7 @@ const ToggleIcon = ({ className }: { className?: string }) => (
 
 const navItems: NavItem[] = [
 	{ href: "/dashboard", label: "Dashboard", icon: DashboardIcon },
-	{ href: "/transactions", label: "Transaksi", icon: TxIcon, badge: "12" },
+	{ href: "/transactions", label: "Transaksi", icon: TxIcon },
 	{ href: "/assets", label: "Aset & Portofolio", icon: PieIcon },
 	{ href: "/budget", label: "Anggaran", icon: TargetIcon },
 	{ href: "/import", label: "Import Data", icon: UploadIcon },

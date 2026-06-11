@@ -26,7 +26,7 @@ from app.import_data.models import (
 	ImportRow,
 	ImportSourceType,
 )
-from app.import_data.parsers import get_parser
+from app.import_data.dispatcher import dispatch
 from app.import_data.schemas import ImportConfirmResponse, ImportRowUpdate
 from app.transactions.models import Transaction, TransactionSource
 from app.users.models import User
@@ -172,7 +172,7 @@ async def process_job(job_id: UUID) -> None:
 
 		try:
 			file_bytes = (UPLOADS_ROOT / job.file_path).read_bytes()
-			parser = get_parser(job.source_type.value)
+			parser = dispatch(file_bytes)
 			parsed = parser.parse(file_bytes)
 		except Exception as exc:
 			job.status = ImportJobStatus.failed

@@ -160,27 +160,6 @@ async def test_duplicate_detection(client):
 	assert len(r.json()["items"]) == 2
 
 
-async def test_stub_parser_fails_gracefully(client):
-	auth = await register_and_login(client)
-	headers = auth["headers"]
-
-	files = {"file": ("anything.pdf", b"%PDF-fake-content", "application/pdf")}
-	data = {"source_type": "pdf_bca"}
-	r = await client.post(
-		"/v1/import/upload", files=files, data=data, headers=headers
-	)
-	assert r.status_code == 202
-	job_id = r.json()["id"]
-
-	await import_service.process_job(UUID(job_id))
-
-	r = await client.get(f"/v1/import/jobs/{job_id}", headers=headers)
-	assert r.status_code == 200
-	body = r.json()
-	assert body["status"] == "failed"
-	assert "belum diimplementasikan" in (body["error_message"] or "")
-
-
 async def test_user_isolation(client):
 	from app.main import app
 

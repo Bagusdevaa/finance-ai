@@ -6,8 +6,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSidebar } from "@/components/layout/Sidebar";
 import { cn } from "@/lib/cn";
-import { listSessions, createSession, getSession, postMessageStream } from "@/lib/api/chat";
+import { listSessions, createSession, getSession, deleteSession, postMessageStream } from "@/lib/api/chat";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { getTransaction } from "@/lib/api/transactions";
 import { getErrorMessage } from "@/lib/api";
+import { formatRupiah } from "@/lib/formatRupiah";
 import type { ChatMessageResponse, ChatSessionResponse } from "@/lib/api/types";
 
 const easeDesignhub = [0.2, 0.7, 0.2, 1] as const;
@@ -99,14 +102,18 @@ export default function ChatPage() {
 		queryFn: listSessions,
 	});
 
-	// Auto-pick the first session when none is selected.
+	// Auto-pick first session pada mount awal (sekali saja). Setelah itu,
+	// `activeSessionId === null` artinya user explicitly di "Chat Baru" mode —
+	// jangan auto-pick supaya empty state tetap muncul.
+	const didInitialPickRef = useRef(false);
 	useEffect(() => {
-		if (activeSessionId) return;
-		const list = sessions ?? [];
-		if (list.length > 0) {
-			setActiveSessionId(list[0].id);
+		if (didInitialPickRef.current) return;
+		if (!sessions) return;
+		didInitialPickRef.current = true;
+		if (sessions.length > 0) {
+			setActiveSessionId(sessions[0].id);
 		}
-	}, [sessions, activeSessionId]);
+	}, [sessions]);
 
 	const { data: sessionDetail } = useQuery({
 		queryKey: ["chat-session", activeSessionId],
@@ -119,13 +126,37 @@ export default function ChatPage() {
 		[sessionDetail],
 	);
 
-	const newSessionMutation = useMutation({
-		mutationFn: () => createSession(),
-		onSuccess: (s) => {
-			setActiveSessionId(s.id);
+	const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+
+	const deleteSessionMutation = useMutation({
+		mutationFn: (id: string) => deleteSession(id),
+		onSuccess: (_, deletedId) => {
+			// Update cache dulu sebelum invalidate — supaya auto-pick effect
+			// nggak nyangkut milih session yang baru saja dihapus.
+			queryClient.setQueryData<ChatSessionResponse[]>(
+				["chat-sessions"],
+				(old) => (old ?? []).filter((s) => s.id !== deletedId),
+			);
+
+			// empty "Chat Baru" state, biar user pilih sendiri mau lanjut ke mana.
+			if (deletedId === activeSessionId) {
+				setActiveSessionId(null);
+			}
 			queryClient.invalidateQueries({ queryKey: ["chat-sessions"] });
+			queryClient.removeQueries({ queryKey: ["chat-session", deletedId] });
+			setPendingDeleteId(null);
 		},
+		onError: () => setPendingDeleteId(null),
 	});
+
+	const handleDeleteSession = useCallback((id: string) => {
+		setPendingDeleteId(id);
+	}, []);
+
+	const pendingDeleteSession = useMemo(
+		() => sessions?.find((s) => s.id === pendingDeleteId) ?? null,
+		[sessions, pendingDeleteId],
+	);
 
 	const scrollToBottom = useCallback(() => {
 		requestAnimationFrame(() => {
@@ -183,7 +214,10 @@ export default function ChatPage() {
 	}, [activeSessionId, queryClient]);
 
 	const handleNewChat = () => {
-		newSessionMutation.mutate();
+		// Lazy: belum bikin session di DB. Empty state ditampilkan;
+		// session beneran dibuat saat user kirim pesan pertama.
+		setActiveSessionId(null);
+		setShowMobileHistory(false);
 	};
 
 	const handleShare = () => {
@@ -253,8 +287,7 @@ export default function ChatPage() {
 						<button
 							type="button"
 							onClick={handleNewChat}
-							disabled={newSessionMutation.isPending}
-							className="inline-flex h-[34px] shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border border-gray-300 px-2.5 text-[13px] font-medium text-gray-700 transition-[background-color,border-color,color] duration-200 hover:border-gray-950 hover:bg-gray-50 hover:text-gray-950 disabled:opacity-50 sm:px-3.5"
+							className="inline-flex h-[34px] shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border border-gray-300 px-2.5 text-[13px] font-medium text-gray-700 transition-[background-color,border-color,color] duration-200 hover:border-gray-950 hover:bg-gray-50 hover:text-gray-950 sm:px-3.5"
 						>
 							<svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14" /><path d="M5 12h14" /></svg>
 							<span className="hidden min-[375px]:inline">Chat Baru</span>
@@ -417,26 +450,13 @@ export default function ChatPage() {
 							<div className="text-[12.5px] text-gray-500">Belum ada chat. Klik &quot;Chat Baru&quot; untuk memulai.</div>
 						) : (
 							sessionList.map((s) => (
-								<button
+								<SessionItem
 									key={s.id}
-									type="button"
-									onClick={() => setActiveSessionId(s.id)}
-									className={cn(
-										"flex w-full items-start gap-2.5 border-b border-gray-200 px-0 py-2.5 text-left text-[12.5px] last:border-b-0 transition-colors",
-										s.id === activeSessionId ? "text-gray-950" : "text-gray-700 hover:[&_.hist-name]:text-gray-950",
-									)}
-								>
-									<span className="mt-0.5 shrink-0 text-gray-400">
-										<svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.5 8.5 0 1 1-3.4-6.8L21 4l-1 3.5A8.5 8.5 0 0 1 21 11.5z" /></svg>
-									</span>
-									<span className="min-w-0 flex-1">
-										<span className={cn(
-											"hist-name block truncate font-medium transition-colors duration-200",
-											s.id === activeSessionId ? "text-gray-950" : "text-gray-800",
-										)}>{s.title}</span>
-										<span className="mt-0.5 block font-mono text-[10.5px] text-gray-400">{formatRelative(s.last_message_at)}</span>
-									</span>
-								</button>
+									session={s}
+									active={s.id === activeSessionId}
+									onSelect={() => setActiveSessionId(s.id)}
+									onDelete={() => handleDeleteSession(s.id)}
+								/>
 							))
 						)}
 					</div>
@@ -479,23 +499,13 @@ export default function ChatPage() {
 									<div className="text-[12.5px] text-gray-500">Belum ada chat.</div>
 								) : (
 									sessionList.map((s) => (
-										<button
+										<SessionItem
 											key={s.id}
-											type="button"
-											onClick={() => { setActiveSessionId(s.id); setShowMobileHistory(false); }}
-											className={cn(
-												"flex w-full items-start gap-2.5 border-b border-gray-200 px-0 py-3 text-left text-[12.5px] last:border-b-0",
-												s.id === activeSessionId ? "text-gray-950" : "text-gray-700",
-											)}
-										>
-											<span className="mt-0.5 shrink-0 text-gray-400">
-												<svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.5 8.5 0 1 1-3.4-6.8L21 4l-1 3.5A8.5 8.5 0 0 1 21 11.5z" /></svg>
-											</span>
-											<span className="min-w-0 flex-1">
-												<span className="block truncate font-medium text-gray-800">{s.title}</span>
-												<span className="mt-0.5 block font-mono text-[10.5px] text-gray-400">{formatRelative(s.last_message_at)}</span>
-											</span>
-										</button>
+											session={s}
+											active={s.id === activeSessionId}
+											onSelect={() => { setActiveSessionId(s.id); setShowMobileHistory(false); }}
+											onDelete={() => handleDeleteSession(s.id)}
+										/>
 									))
 								)}
 							</div>
@@ -503,6 +513,26 @@ export default function ChatPage() {
 					</>
 				)}
 			</AnimatePresence>
+
+			<ConfirmDialog
+				open={pendingDeleteId !== null}
+				title="Hapus percakapan?"
+				description={
+					pendingDeleteSession
+						? `"${pendingDeleteSession.title}" beserta seluruh pesannya akan dihapus permanen.`
+						: undefined
+				}
+				confirmLabel="Hapus"
+				cancelLabel="Batal"
+				tone="danger"
+				loading={deleteSessionMutation.isPending}
+				onConfirm={() => {
+					if (pendingDeleteId) deleteSessionMutation.mutate(pendingDeleteId);
+				}}
+				onClose={() => {
+					if (!deleteSessionMutation.isPending) setPendingDeleteId(null);
+				}}
+			/>
 
 			{/* Toast */}
 			<AnimatePresence>
@@ -561,13 +591,7 @@ function MessageBubble({
 			{!isUser && sources.length > 0 && (
 				<div className="mt-2 flex flex-wrap gap-1.5">
 					{sources.map((id) => (
-						<span
-							key={id}
-							className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 font-mono text-[10px] text-gray-500"
-							title={id}
-						>
-							{id.slice(0, 8)}…
-						</span>
+						<SourcePill key={id} txId={id} />
 					))}
 				</div>
 			)}
@@ -577,5 +601,142 @@ function MessageBubble({
 				</span>
 			)}
 		</motion.div>
+	);
+}
+
+// Source pill — fetches transaction detail on mount, shows preview on hover/tap.
+// Tab di mobile (no hover) = toggle. TanStack Query cache by tx id, jadi pill
+// dengan id sama (lintas pesan) cuma fetch sekali.
+function SourcePill({ txId }: { txId: string }) {
+	const [open, setOpen] = useState(false);
+	const wrapRef = useRef<HTMLSpanElement>(null);
+
+	const { data: tx } = useQuery({
+		queryKey: ["transaction", txId],
+		queryFn: () => getTransaction(txId),
+		staleTime: 5 * 60_000,
+	});
+
+	useEffect(() => {
+		if (!open) return;
+		const handler = (e: MouseEvent) => {
+			if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+				setOpen(false);
+			}
+		};
+		document.addEventListener("mousedown", handler);
+		return () => document.removeEventListener("mousedown", handler);
+	}, [open]);
+
+	const label = tx?.merchant_name || `${txId.slice(0, 8)}…`;
+	const amount = tx ? parseFloat(tx.amount) : 0;
+	const isIncome = amount > 0;
+
+	return (
+		<span
+			ref={wrapRef}
+			className="relative inline-flex"
+			onMouseEnter={() => setOpen(true)}
+			onMouseLeave={() => setOpen(false)}
+		>
+			<button
+				type="button"
+				onClick={() => setOpen((v) => !v)}
+				className="inline-flex max-w-[160px] items-center gap-1 truncate rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10.5px] text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-950"
+			>
+				<span className="truncate">{label}</span>
+			</button>
+			<AnimatePresence>
+				{open && tx && (
+					<motion.span
+						initial={{ opacity: 0, y: 4 }}
+						animate={{ opacity: 1, y: 0 }}
+						exit={{ opacity: 0, y: 4 }}
+						transition={{ duration: 0.15 }}
+						className="absolute bottom-full left-0 z-20 mb-1.5 w-[240px] rounded-lg border border-gray-200 bg-white p-3 shadow-[0_10px_30px_-8px_rgba(0,0,0,0.18)]"
+					>
+						<span className="block truncate text-[13px] font-medium text-gray-950">
+							{tx.merchant_name || "(tanpa merchant)"}
+						</span>
+						{tx.description && (
+							<span className="mt-0.5 block truncate text-[11.5px] text-gray-500">
+								{tx.description}
+							</span>
+						)}
+						<span
+							className={cn(
+								"mt-2 block font-mono text-[13px] font-medium tabular-nums",
+								isIncome ? "text-gray-950" : "text-gray-950",
+							)}
+						>
+							{isIncome ? "+" : "−"} {formatRupiah(Math.abs(amount))}
+						</span>
+						<span className="mt-1 flex items-center justify-between font-mono text-[10.5px] text-gray-400">
+							<span>{tx.transaction_date}</span>
+							{tx.category && (
+								<span className="rounded-full bg-gray-100 px-2 py-0.5 text-gray-600">
+									{tx.category}
+								</span>
+							)}
+						</span>
+					</motion.span>
+				)}
+			</AnimatePresence>
+		</span>
+	);
+}
+
+function SessionItem({
+	session,
+	active,
+	onSelect,
+	onDelete,
+}: {
+	session: ChatSessionResponse;
+	active: boolean;
+	onSelect: () => void;
+	onDelete: () => void;
+}) {
+	const handleDeleteClick = (e: React.MouseEvent) => {
+		e.stopPropagation();
+		onDelete();
+	};
+
+	return (
+		<div
+			className={cn(
+				"group relative flex items-start gap-2.5 border-b border-gray-200 py-2.5 text-[12.5px] last:border-b-0 transition-colors",
+				active ? "text-gray-950" : "text-gray-700",
+			)}
+		>
+			<button
+				type="button"
+				onClick={onSelect}
+				className="flex flex-1 items-start gap-2.5 text-left"
+			>
+				<span className="mt-0.5 shrink-0 text-gray-400">
+					<svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.5 8.5 0 1 1-3.4-6.8L21 4l-1 3.5A8.5 8.5 0 0 1 21 11.5z" /></svg>
+				</span>
+				<span className="min-w-0 flex-1 pr-6">
+					<span className={cn(
+						"block truncate font-medium transition-colors duration-200",
+						active ? "text-gray-950" : "text-gray-800 group-hover:text-gray-950",
+					)}>{session.title}</span>
+					<span className="mt-0.5 block font-mono text-[10.5px] text-gray-400">{formatRelative(session.last_message_at)}</span>
+				</span>
+			</button>
+			<button
+				type="button"
+				onClick={handleDeleteClick}
+				aria-label="Hapus percakapan"
+				className="absolute right-0 top-2.5 grid h-6 w-6 place-items-center rounded text-gray-400 opacity-0 transition-opacity hover:bg-gray-100 hover:text-gray-950 group-hover:opacity-100"
+			>
+				<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+					<polyline points="3 6 5 6 21 6" />
+					<path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+					<path d="M10 11v6M14 11v6" />
+				</svg>
+			</button>
+		</div>
 	);
 }
