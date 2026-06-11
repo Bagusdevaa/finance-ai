@@ -1,8 +1,64 @@
 # Local development override.
 # Auto-loaded by `docker compose` on top of docker-compose.yml.
-# Exposes Postgres and Qdrant to the host so you can run uvicorn/alembic locally.
+# Full Docker dev: backend + frontend + caddy + postgres + qdrant.
+# Backend dan frontend pakai Dockerfile.dev dengan source code bind-mount + HMR.
 
 services:
+  caddy:
+    volumes:
+      - ./Caddyfile.dev:/etc/caddy/Caddyfile
+    # Dev: hanya port 80 (no TLS auto). Override prod compose's "443:443" by
+    # explicitly redeclaring ports (compose merges by key — we replace).
+    ports:
+      - "80:80"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    volumes:
+      # Bind-mount source untuk Next HMR
+      - ./frontend:/app
+      # Named volume untuk shadow node_modules — avoid host overwrite
+      - frontend_node_modules:/app/node_modules
+      # Shadow .next cache di container (faster than VirtioFS bind)
+      - frontend_next_cache:/app/.next
+    environment:
+      NEXT_PUBLIC_API_URL: http://api.localhost
+      # Polling untuk file watcher (Mac VirtioFS HMR reliability)
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    volumes:
+      # Bind-mount source dirs (NOT whole ./backend untuk hindari konflik dengan host venv)
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+      - ./backend/alembic.ini:/app/alembic.ini
+      - ./backend/tests:/app/tests
+      # Uploads sebagai writable named volume (jangan di host filesystem)
+      - backend_uploads:/app/uploads
+    env_file:
+      - ./backend/.env
+    environment:
+      # Override DB + Qdrant URL untuk pakai container network service names
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      QDRANT_URL: http://qdrant:6333
+      # Force watchfiles polling mode — Mac VirtioFS bind mount tidak reliably
+      # emit file change events to Linux container kernel
+      WATCHFILES_FORCE_POLLING: "true"
+      # Override conftest's default localhost:5432 (which fails inside container)
+      # untuk point ke postgres service via compose network
+      TEST_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/financeai_test
+      # Browser hits backend via Caddy at http://localhost (port 80, no port suffix),
+      # bukan http://localhost:3000. Override backend CORS allow_origins untuk dev Docker.
+      FRONTEND_URL: http://localhost
+    # Override prod CMD untuk --reload
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app"]
+
   postgres:
     ports:
       - "5432:5432"
@@ -10,3 +66,8 @@ services:
   qdrant:
     ports:
       - "6333:6333"
+
+volumes:
+  frontend_node_modules:
+  frontend_next_cache:
+  backend_uploads:
