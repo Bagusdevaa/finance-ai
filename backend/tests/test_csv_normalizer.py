@@ -276,3 +276,27 @@ def test_run_normalize_inference_error_falls_back(monkeypatch):
 	outcome = cn.run_normalize(csv_bytes, _simple_rows(), 0, None)
 	assert outcome.used_fallback is True
 	assert len(outcome.result.rows) == 1
+
+
+import os
+
+from app.config import get_settings
+
+
+@pytest.mark.skipif(
+	os.getenv("VISION_TEST_LIVE") != "1" or not get_settings().GROQ_API_KEY,
+	reason="VISION_TEST_LIVE=1 + GROQ_API_KEY required",
+)
+def test_live_infer_and_apply_pluang():
+	"""Real Groq call: infer Pluang recipe, apply, expect IDR-converted rows."""
+	from decimal import Decimal as D
+	from pathlib import Path
+
+	fixture = Path(__file__).parent / "fixtures/vision/invest/pluang-transaction-report.csv"
+	all_rows, header_idx, _ = read_csv_rows(fixture.read_bytes())
+	recipe = cn.infer_recipe(all_rows[header_idx], cn._sample_rows(all_rows, header_idx))
+	result = apply_recipe(all_rows, header_idx, recipe)
+
+	assert len(result.rows) >= 5
+	# At least one originally-USD row converted to a sizable IDR amount.
+	assert any(r.currency == "IDR" and abs(r.amount) > D("1000") for r in result.rows)
