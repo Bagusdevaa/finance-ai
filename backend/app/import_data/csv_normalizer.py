@@ -2,7 +2,7 @@
 
 Resep = pemetaan kolom + aturan yang di-infer LLM SEKALI per format, lalu
 di-cache. apply_recipe (file lain di modul ini) menerapkannya deterministik.
-Angka & FATX dihitung Python — LLM tidak pernah transkrip angka.
+Angka & FX dihitung Python — LLM tidak pernah transkrip angka.
 """
 
 import csv
