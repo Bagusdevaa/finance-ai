@@ -183,3 +183,38 @@ def test_apply_recipe_sign_default_negative():
 	all_rows = [["d", "a", "t"], ["2026-01-01", "500", "WEIRD"]]
 	result = apply_recipe(all_rows, 0, recipe)
 	assert result.rows[0].amount == Decimal("-500")
+
+
+from app.import_data import csv_normalizer as cn
+
+
+def test_infer_recipe_parses_valid_json(monkeypatch):
+	canned = (
+		'{"source_label":"X","confidence":0.9,'
+		'"date":{"column":"d"},"amount":{"column":"a"}}'
+	)
+	monkeypatch.setattr(cn, "text_complete", lambda *a, **k: canned)
+	recipe = cn.infer_recipe(["d", "a"], [["2026-01-01", "100"]])
+	assert recipe.date_column == "d"
+	assert recipe.confidence == 0.9
+
+
+def test_infer_recipe_retries_then_succeeds(monkeypatch):
+	calls = {"n": 0}
+
+	def fake(*a, **k):
+		calls["n"] += 1
+		if calls["n"] == 1:
+			return "not json at all"
+		return '{"date":{"column":"d"},"amount":{"column":"a"}}'
+
+	monkeypatch.setattr(cn, "text_complete", fake)
+	recipe = cn.infer_recipe(["d", "a"], [["2026-01-01", "100"]])
+	assert recipe.amount_column == "a"
+	assert calls["n"] == 2
+
+
+def test_infer_recipe_raises_after_repeated_bad_json(monkeypatch):
+	monkeypatch.setattr(cn, "text_complete", lambda *a, **k: "still not json")
+	with pytest.raises(RecipeInferenceError):
+		cn.infer_recipe(["d", "a"], [["2026-01-01", "100"]])

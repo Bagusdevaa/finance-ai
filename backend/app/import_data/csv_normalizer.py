@@ -8,10 +8,14 @@ Angka & FATX dihitung Python — LLM tidak pernah transkrip angka.
 import csv
 import hashlib
 import io
+import json
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
+
+from app.ai.groq_client import text_complete
+from app.ai.recipe_prompts import RECIPE_SYSTEM_PROMPT, build_recipe_user_prompt
 
 from app.import_data.parsers.base import ParsedRow, ParseResult
 from app.import_data.parsers.manual_csv import (
@@ -297,3 +301,39 @@ def apply_recipe(
 			rows.append(parsed)
 	content_type = "statement" if rows else "unknown"
 	return ParseResult(rows=rows, content_type=content_type)
+
+
+_SAMPLE_HEAD = 12
+_SAMPLE_TAIL = 3
+
+
+def _sample_rows(all_rows: list[list[str]], header_idx: int) -> list[list[str]]:
+	"""Ambil sampel baris data: 12 awal + 3 akhir (ragam jenis transaksi)."""
+	data = all_rows[header_idx + 1 :]
+	if len(data) <= _SAMPLE_HEAD + _SAMPLE_TAIL:
+		return data
+	return data[:_SAMPLE_HEAD] + data[-_SAMPLE_TAIL:]
+
+
+def _parse_json(raw: str) -> dict | None:
+	if not raw:
+		return None
+	try:
+		obj = json.loads(raw)
+	except json.JSONDecodeError:
+		return None
+	return obj if isinstance(obj, dict) else None
+
+
+def infer_recipe(header_cols: list[str], sample_rows: list[list[str]]) -> Recipe:
+	"""Panggil LLM untuk infer resep dari header + sampel. Retry 1× bad JSON."""
+	user_prompt = build_recipe_user_prompt(header_cols, sample_rows)
+	raw = text_complete(RECIPE_SYSTEM_PROMPT, user_prompt)
+	obj = _parse_json(raw)
+	if obj is None:
+		retry = "Your previous reply was not valid JSON. Output STRICT JSON only.\n\n" + user_prompt
+		raw = text_complete(RECIPE_SYSTEM_PROMPT, retry)
+		obj = _parse_json(raw)
+	if obj is None:
+		raise RecipeInferenceError("LLM did not return valid JSON")
+	return Recipe.from_llm_json(obj)
