@@ -39,19 +39,33 @@ Output a recipe JSON with EXACTLY this shape (use null when a field does not app
   }},
   "description_template": "<template using {{Column Name}} placeholders, e.g. {{Transaction Type}} {{Product Name}}>",
   "merchant": {{ "column": "<header for merchant/asset name, or null>" }},
+  "default_category": "<catch-all category for any row not matched by category_rules, e.g. Investasi, or null>",
   "category_rules": [
     {{ "column": "<header>", "in": ["<values>"], "category": "<category name, e.g. Investasi>" }}
   ],
   "skip": [
-    {{ "column": "<header>", "not_in": ["<values to KEEP, e.g. SUCCESS>"] }}
+    {{ "column": "<status header>", "in": ["<known-failed status values to DROP>"] }}
   ]
 }}
 
 Rules:
 - date.column and amount.column are REQUIRED. If you cannot find them, still output them as best guess but set confidence low.
-- Investment/broker rows (buy/sell stock/crypto/gold/forex) → category "Investasi". Top-ups → "Top Up".
-- For brokers: BUY / TOP UP / converting to foreign cash → out_values; SELL → in_values.
-- If a currency column exists with a per-row to-IDR rate column, set both so code can convert to IDR.
-- Skip non-successful rows (status not SUCCESS/Selesai/Completed) via the skip rule.
+
+SKIP RULE — BLOCKLIST, NOT ALLOWLIST:
+- The skip rule must use "in" (blocklist): list only the known-FAILED statuses to drop (e.g. CANCELED, CANCELLED, FAILED, PENDING, EXPIRED, REJECTED, GAGAL, DIBATALKAN).
+- Every other status (SUCCESS, COMPLETED, SELESAI, or any unknown status) is KEPT by default.
+- NEVER use "not_in" for status filtering — that silently drops valid rows whose success status was not anticipated (e.g. COMPLETED alongside SUCCESS).
+
+CURRENCY / FOREX:
+- Treat an amount as foreign currency ONLY when a per-row conversion-rate column provides a real numeric rate for that row (e.g. a "USD-IDR Rate" column with a number like 16420).
+- For currency-exchange or forex transaction rows (e.g. Transaction Type "IDR USD", "USD IDR", "Forex"), the Total Amount is the rupiah leg — it is IDR. Do NOT mark it foreign just because a currency column says "USD". Only set currency mode to "column" and fx_rate_column if there is a genuine per-row rate column.
+- If no per-row rate column exists, set currency to fixed IDR.
+
+CATEGORIZATION (investment/brokerage exports):
+- For investment/brokerage exports, set default_category to "Investasi" so any uncovered transaction type still gets categorized.
+- Add explicit category_rules to split out non-investment movements: top-ups → "Top Up", cash withdrawals/out transfers → "Transfer".
+- Every distinct value in the category-driving column should map to a rule where possible. Anything not covered falls through to default_category.
+- Cover ALL investment transaction types visible in the sample: stocks, crypto, gold, forex/currency exchange, bundles/pockets/auto-invest, etc. — these should all map to "Investasi".
+- For brokers: BUY / TOP UP / converting to foreign cash → out_values; SELL / cash withdrawal → in_values.
 
 Return ONLY the JSON object."""

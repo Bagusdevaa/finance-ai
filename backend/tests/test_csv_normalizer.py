@@ -163,13 +163,56 @@ def test_apply_recipe_foreign_currency_without_rate_is_flagged():
 	)
 	all_rows = [
 		["d", "a", "cur", "rate"],
-		["2026-01-01", "100", "USD", ""],  # no rate → cannot convert
+		["2026-01-01", "100", "USD", ""],  # no rate → treat as IDR, flag for review
 	]
 	result = apply_recipe(all_rows, 0, recipe)
 	assert len(result.rows) == 1
 	row = result.rows[0]
-	assert row.currency == "USD"  # kept native
+	assert row.currency == "IDR"  # treated as home currency, not kept as foreign
 	assert row.confidence_score <= Decimal("0.70")  # flagged
+
+
+def test_apply_recipe_default_category_fallback():
+	recipe = Recipe.from_llm_json(
+		{
+			"date": {"column": "d", "format": "%Y-%m-%d"},
+			"amount": {"column": "a"},
+			"default_category": "Investasi",
+			"category_rules": [
+				{"column": "type", "in": ["Top Up"], "category": "Top Up"},
+			],
+		}
+	)
+	# row type "Crypto" does not match any rule → should fall back to default_category
+	all_rows = [
+		["d", "a", "type"],
+		["2026-01-01", "500000", "Crypto"],
+	]
+	result = apply_recipe(all_rows, 0, recipe)
+	assert len(result.rows) == 1
+	assert result.rows[0].category == "Investasi"
+
+
+def test_recipe_skip_blocklist():
+	recipe = Recipe.from_llm_json(
+		{
+			"date": {"column": "d", "format": "%Y-%m-%d"},
+			"amount": {"column": "a"},
+			"skip": [{"column": "st", "in": ["CANCELED"]}],
+		}
+	)
+	all_rows = [
+		["d", "a", "st"],
+		["2026-01-01", "1000", "SUCCESS"],
+		["2026-01-02", "2000", "COMPLETED"],
+		["2026-01-03", "3000", "CANCELED"],
+	]
+	result = apply_recipe(all_rows, 0, recipe)
+	assert len(result.rows) == 2
+	statuses = {r.amount for r in result.rows}
+	assert Decimal("1000") in statuses
+	assert Decimal("2000") in statuses
+	assert Decimal("3000") not in statuses
 
 
 def test_apply_recipe_sign_default_negative():

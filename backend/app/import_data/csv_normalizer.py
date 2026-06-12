@@ -28,7 +28,7 @@ from app.import_data.parsers.manual_csv import (
 
 
 # Naikkan kalau struktur resep berubah → resep cache versi lama di-infer ulang.
-RECIPE_SCHEMA_VERSION = 1
+RECIPE_SCHEMA_VERSION = 2
 
 # Di bawah ini → resep dianggap tidak bisa dipercaya, jatuh ke manual_csv.
 CONFIDENCE_FLOOR = 0.5
@@ -57,6 +57,7 @@ class Recipe:
 	merchant_column: str | None
 	category_rules: list[dict] = field(default_factory=list)
 	skip_rules: list[dict] = field(default_factory=list)
+	default_category: str | None = None
 	schema_version: int = RECIPE_SCHEMA_VERSION
 
 	@classmethod
@@ -96,6 +97,7 @@ class Recipe:
 			merchant_column=(merchant.get("column") or None),
 			category_rules=list(d.get("category_rules") or []),
 			skip_rules=list(d.get("skip") or []),
+			default_category=(d.get("default_category") or None),
 		)
 
 	@classmethod
@@ -126,6 +128,7 @@ class Recipe:
 			"merchant": {"column": self.merchant_column},
 			"category_rules": self.category_rules,
 			"skip": self.skip_rules,
+			"default_category": self.default_category,
 		}
 
 
@@ -177,7 +180,7 @@ def _match_category(row: dict, recipe: Recipe) -> str | None:
 		allowed = {str(x).strip().lower() for x in rule.get("in", [])}
 		if val and val in allowed:
 			return rule.get("category")
-	return None
+	return recipe.default_category
 
 
 def _should_skip(row: dict, recipe: Recipe) -> bool:
@@ -255,7 +258,8 @@ def _apply_row(row: dict, recipe: Recipe, line_no: int) -> ParsedRow | None:
 			amount = amount * rate
 			currency = "IDR"
 		else:
-			# Cannot convert → keep native, flag for review.
+			# Cannot convert → treat amount as IDR (home currency), flag for review.
+			currency = "IDR"
 			confidence = min(confidence, Decimal("0.70"))
 
 	amount = _apply_sign(amount, row, recipe).quantize(_TWO_DP)
