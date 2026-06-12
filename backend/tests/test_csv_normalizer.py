@@ -321,6 +321,50 @@ def test_run_normalize_inference_error_falls_back(monkeypatch):
 	assert len(outcome.result.rows) == 1
 
 
+from app.import_data.csv_normalizer import _FAILED_STATUSES
+
+
+def test_reconcile_forces_currency_column_and_rate():
+	from app.import_data.csv_normalizer import _reconcile_recipe
+	recipe = Recipe.from_llm_json(
+		{"date": {"column": "d"}, "amount": {"column": "Total Amount"},
+		 "currency": {"mode": "fixed", "fixed": "IDR"}}
+	)
+	header = ["d", "Total Amount", "Currency", "USD-IDR Conversion Rate*"]
+	rows = [
+		["2026-01-01", "99.03", "USD", "17383"],
+		["2026-01-02", "50000", "IDR", ""],
+	]
+	out = _reconcile_recipe(recipe, header, rows)
+	assert out.currency_mode == "column"
+	assert out.currency_column == "Currency"
+	assert out.fx_rate_column == "USD-IDR Conversion Rate*"
+
+
+def test_reconcile_leaves_all_idr_file_alone():
+	from app.import_data.csv_normalizer import _reconcile_recipe
+	recipe = Recipe.from_llm_json(
+		{"date": {"column": "d"}, "amount": {"column": "a"},
+		 "currency": {"mode": "fixed", "fixed": "IDR"}}
+	)
+	header = ["d", "a", "Currency"]
+	rows = [["2026-01-01", "1000", "IDR"], ["2026-01-02", "2000", "IDR"]]
+	out = _reconcile_recipe(recipe, header, rows)
+	assert out.currency_mode == "fixed"  # no foreign exposure → untouched
+
+
+def test_reconcile_forces_status_blocklist():
+	from app.import_data.csv_normalizer import _reconcile_recipe
+	recipe = Recipe.from_llm_json(
+		{"date": {"column": "d"}, "amount": {"column": "a"},
+		 "skip": [{"column": "Status", "not_in": ["SUCCESS"]}]}
+	)
+	header = ["d", "a", "Status"]
+	rows = [["2026-01-01", "1000", "SUCCESS"]]
+	out = _reconcile_recipe(recipe, header, rows)
+	assert out.skip_rules == [{"column": "Status", "in": list(_FAILED_STATUSES)}]
+
+
 import os
 
 from app.config import get_settings

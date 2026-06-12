@@ -28,10 +28,15 @@ from app.import_data.parsers.manual_csv import (
 
 
 # Naikkan kalau struktur resep berubah → resep cache versi lama di-infer ulang.
-RECIPE_SCHEMA_VERSION = 2
+RECIPE_SCHEMA_VERSION = 3
 
 # Di bawah ini → resep dianggap tidak bisa dipercaya, jatuh ke manual_csv.
 CONFIDENCE_FLOOR = 0.5
+
+_KNOWN_CURRENCIES = {"IDR", "USD", "EUR", "SGD", "GBP", "JPY", "AUD", "HKD", "CNY", "MYR", "CHF", "CAD"}
+_FAILED_STATUSES = ["CANCELED", "CANCELLED", "FAILED", "PENDING", "EXPIRED", "REJECTED", "GAGAL", "DIBATALKAN", "VOID", "DECLINED"]
+_RATE_HEADER_HINTS = ("rate", "conversion", "kurs", "exchange")
+_STATUS_HEADER_HINTS = ("status", "state")
 
 
 class RecipeInferenceError(Exception):
@@ -330,6 +335,54 @@ def _parse_json(raw: str) -> dict | None:
 	return obj if isinstance(obj, dict) else None
 
 
+def _reconcile_recipe(
+	recipe: Recipe, header_cols: list[str], sample_rows: list[list[str]]
+) -> Recipe:
+	"""Deterministically lock the high-stakes mappings (currency + FX rate +
+	status skip) by inspecting the data, overriding the LLM where the data is
+	unambiguous. LLM inference is nondeterministic; these fields are too costly
+	to get wrong (a missed currency = a 17000x error), so we detect them from
+	the columns instead of trusting the model. The LLM still owns description,
+	category, and sign.
+	"""
+	cols = [(c or "").strip() for c in header_cols]
+
+	def col_values(j: int) -> list[str]:
+		out = []
+		for r in sample_rows:
+			if j < len(r):
+				v = (r[j] or "").strip()
+				if v:
+					out.append(v)
+		return out
+
+	# Currency column: values are predominantly known currency codes.
+	for j, name in enumerate(cols):
+		vals = col_values(j)
+		if not vals:
+			continue
+		hits = [v.upper() for v in vals if v.upper() in _KNOWN_CURRENCIES]
+		if len(hits) >= max(1, int(len(vals) * 0.6)):
+			# Only switch to per-row currency when real foreign exposure exists.
+			if set(hits) - {"IDR"}:
+				recipe.currency_mode = "column"
+				recipe.currency_column = name
+				recipe.currency_fixed = "IDR"
+				for k, h in enumerate(cols):
+					if any(hint in h.lower() for hint in _RATE_HEADER_HINTS):
+						recipe.fx_rate_column = cols[k]
+						break
+			break
+
+	# Status skip: force a canonical failure blocklist on the status column.
+	for name in cols:
+		if any(hint in name.lower() for hint in _STATUS_HEADER_HINTS):
+			recipe.skip_rules = [{"column": name, "in": list(_FAILED_STATUSES)}]
+			break
+
+	return recipe
+
+
 def infer_recipe(header_cols: list[str], sample_rows: list[list[str]]) -> Recipe:
 	"""Panggil LLM untuk infer resep dari header + sampel. Retry 1× bad JSON."""
 	user_prompt = build_recipe_user_prompt(header_cols, sample_rows)
@@ -341,7 +394,8 @@ def infer_recipe(header_cols: list[str], sample_rows: list[list[str]]) -> Recipe
 		obj = _parse_json(raw)
 	if obj is None:
 		raise RecipeInferenceError("LLM did not return valid JSON")
-	return Recipe.from_llm_json(obj)
+	recipe = Recipe.from_llm_json(obj)
+	return _reconcile_recipe(recipe, header_cols, sample_rows)
 
 
 @dataclass
