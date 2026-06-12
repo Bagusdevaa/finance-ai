@@ -19,7 +19,7 @@ import type {
 	AccountResponse,
 } from "@/lib/api/types";
 import { getErrorMessage } from "@/lib/api";
-import { formatRupiah } from "@/lib/formatRupiah";
+import { formatAmount } from "@/lib/formatRupiah";
 import { cn } from "@/lib/cn";
 
 const easeDesignhub = [0.2, 0.7, 0.2, 1] as const;
@@ -522,8 +522,7 @@ function TxRow({ t, onSelect }: { t: TransactionResponse; onSelect: (t: Transact
 						amt > 0 ? "text-gray-950" : "text-gray-700",
 					)}
 				>
-					{amt > 0 ? "+ " : "− "}
-					{formatRupiah(Math.abs(amt))}
+					{formatAmount(t.amount, t.currency, { withSign: true })}
 				</span>
 			</td>
 		</tr>
@@ -624,8 +623,7 @@ function TxSidePanelInner({
 			<div className="flex justify-between gap-3 border-b border-gray-200 px-6 py-5">
 				<div>
 					<div className="font-serif text-[42px] font-light leading-none tracking-tight2 tabular-nums text-gray-950">
-						{amt > 0 ? "+" : "−"}
-						{formatRupiah(Math.abs(amt))}
+						{formatAmount(tx.amount, tx.currency, { withSign: true })}
 					</div>
 					<div className="mt-1.5 text-sm text-gray-700">{tx.merchant_name || tx.description || "Tanpa nama"}</div>
 				</div>

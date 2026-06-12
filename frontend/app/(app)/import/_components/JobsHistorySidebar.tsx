@@ -71,9 +71,10 @@ export function JobsHistorySidebar({ activeJobId, onJobClick }: JobsHistorySideb
 					Belum ada import. Drop file di sebelah kiri untuk mulai.
 				</div>
 			) : (
-				<div className="space-y-1.5">
-					<AnimatePresence initial={false}>
-						{visibleJobs.map((job) => {
+				<div className="max-h-[calc(100vh-200px)] overflow-y-auto pr-1">
+					<div className="space-y-1.5">
+						<AnimatePresence initial={false}>
+							{visibleJobs.map((job) => {
 							const badge = STATUS_BADGE[job.status];
 							const clickable = isClickable(job.status);
 							const isActive = activeJobId === job.id;
@@ -120,7 +121,8 @@ export function JobsHistorySidebar({ activeJobId, onJobClick }: JobsHistorySideb
 								</motion.button>
 							);
 						})}
-					</AnimatePresence>
+						</AnimatePresence>
+					</div>
 				</div>
 			)}
 		</aside>

@@ -22,7 +22,7 @@ from sqlalchemy import (
 	Text,
 )
 from sqlalchemy import Enum as SAEnum
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.base_model import (
@@ -99,6 +99,11 @@ class ImportJob(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
 		nullable=True,
 	)
 
+	# Phase 4: classify + math-check + holdings detection
+	content_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+	balance_check: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+	detected_holdings: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+
 	rows: Mapped[list["ImportRow"]] = relationship(
 		"ImportRow",
 		back_populates="job",
@@ -158,3 +163,21 @@ class ImportRow(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
 	__table_args__ = (
 		Index("ix_import_rows_job_line", "job_id", "line_no"),
 	)
+
+
+class ImportRecipe(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+	"""Cached column-mapping recipe keyed by header fingerprint.
+
+	Global (no user_id) — recipe holds only column mapping, no PII. A format
+	learned from one upload speeds up every user's import of that format.
+	"""
+
+	__tablename__ = "import_recipes"
+
+	fingerprint: Mapped[str] = mapped_column(
+		String(64), unique=True, index=True, nullable=False
+	)
+	source_label: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+	recipe_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+	schema_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+	confidence: Mapped[Decimal | None] = mapped_column(Numeric(3, 2), nullable=True)

@@ -27,7 +27,7 @@ import pdfplumber
 
 from app.ai.categorizer import categorize_rule_based
 from app.import_data.models import ImportSourceType
-from app.import_data.parsers.base import ParsedRow, register
+from app.import_data.parsers.base import ParsedRow, ParseResult, register
 
 
 # Bulan English abbreviation → angka (BNI selalu English meskipun konten lain Indonesian).
@@ -133,16 +133,16 @@ def _apply_bni_fallback(categorizer_result: str | None, bni_category: str) -> st
 
 @register(ImportSourceType.pdf_bni.value)
 class PdfBniParser:
-	def parse(self, file_bytes: bytes) -> list[ParsedRow]:
+	def parse(self, file_bytes: bytes) -> ParseResult:
 		if not file_bytes:
-			return []
+			return ParseResult()
 		try:
 			lines = self._extract_lines(file_bytes)
 		except Exception:
 			# pdfplumber raises various exceptions on corrupt/non-PDF input.
-			# Parser harus graceful — kembalikan list kosong, biarkan service
+			# Parser harus graceful — kembalikan ParseResult kosong, biarkan service
 			# layer record job sebagai review dengan 0 rows.
-			return []
+			return ParseResult()
 
 		rows: list[ParsedRow] = []
 		i = 0
@@ -202,7 +202,7 @@ class PdfBniParser:
 			)
 			i += 3
 
-		return rows
+		return ParseResult(rows=rows)
 
 	@staticmethod
 	def _extract_lines(file_bytes: bytes) -> list[str]:

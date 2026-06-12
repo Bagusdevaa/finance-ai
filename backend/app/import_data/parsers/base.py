@@ -8,7 +8,7 @@ Service layer tinggal panggil get_parser(source_type).parse(bytes).
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
-from typing import Protocol
+from typing import Literal, Protocol
 
 
 @dataclass
@@ -24,12 +24,44 @@ class ParsedRow:
 	raw_text: str = ""
 
 
+@dataclass
+class ParsedHolding:
+	line_no: int
+	ticker: str
+	qty: Decimal | None = None
+	avg_price: Decimal | None = None
+	market_value: Decimal | None = None
+	currency: str = "IDR"
+	asset_type: Literal["stock", "crypto", "gold", "cash", "unknown"] = "unknown"
+	confidence_score: Decimal = field(default_factory=lambda: Decimal("1.00"))
+	raw_text: str = ""
+
+
+@dataclass
+class BalanceCheck:
+	saldo_awal: Decimal
+	saldo_akhir: Decimal
+	sum_transactions: Decimal
+	expected_delta: Decimal
+	actual_delta: Decimal
+	matches: bool
+	diff_pct: Decimal
+
+
+@dataclass
+class ParseResult:
+	rows: list[ParsedRow] = field(default_factory=list)
+	holdings: list[ParsedHolding] = field(default_factory=list)
+	content_type: Literal["statement", "receipt", "holding", "unknown"] = "unknown"
+	balance_check: BalanceCheck | None = None
+
+
 class ParserError(Exception):
 	pass
 
 
 class Parser(Protocol):
-	def parse(self, file_bytes: bytes) -> list[ParsedRow]: ...
+	def parse(self, file_bytes: bytes) -> "ParseResult": ...
 
 
 # Registry diisi via @register decorator di tiap parser module.

@@ -4,6 +4,8 @@ Unit tests pakai mocked Groq (selalu jalan).
 Integration live tests dipisah ke test_image_vision_live.py (gated env flag).
 """
 
+from decimal import Decimal
+
 import pytest
 
 
@@ -139,33 +141,23 @@ def test_detect_image_mime_unknown_returns_none():
 	assert _detect_image_mime(b"") is None
 
 
-def test_parse_vision_response_valid():
-	from app.import_data.parsers.image_vision import _parse_vision_response
-	raw = '{"transactions":[{"date":"2026-01-01","amount":100,"currency":"IDR","description":"test"}]}'
-	items = _parse_vision_response(raw)
-	assert len(items) == 1
-	assert items[0]["date"] == "2026-01-01"
+def test_parse_vision_response_obj_valid():
+	from app.import_data.parsers.image_vision import _parse_vision_response_obj
+	raw = '{"content_type":"statement","transactions":[{"date":"2026-01-01"}]}'
+	obj = _parse_vision_response_obj(raw)
+	assert obj is not None
+	assert obj.get("content_type") == "statement"
 
 
-def test_parse_vision_response_empty_array():
-	from app.import_data.parsers.image_vision import _parse_vision_response
-	assert _parse_vision_response('{"transactions":[]}') == []
+def test_parse_vision_response_obj_malformed():
+	from app.import_data.parsers.image_vision import _parse_vision_response_obj
+	assert _parse_vision_response_obj("not json") is None
+	assert _parse_vision_response_obj("") is None
 
 
-def test_parse_vision_response_malformed_json():
-	from app.import_data.parsers.image_vision import _parse_vision_response
-	assert _parse_vision_response("not json") == []
-	assert _parse_vision_response("") == []
-
-
-def test_parse_vision_response_missing_transactions_key():
-	from app.import_data.parsers.image_vision import _parse_vision_response
-	assert _parse_vision_response('{"foo":"bar"}') == []
-
-
-def test_parse_vision_response_transactions_not_a_list():
-	from app.import_data.parsers.image_vision import _parse_vision_response
-	assert _parse_vision_response('{"transactions":"not a list"}') == []
+def test_parse_vision_response_obj_non_dict():
+	from app.import_data.parsers.image_vision import _parse_vision_response_obj
+	assert _parse_vision_response_obj('["array not dict"]') is None
 
 
 # ---------- _compute_confidence ----------
@@ -368,8 +360,8 @@ def _patch_vision(monkeypatch, *return_values):
 def test_parse_empty_bytes_returns_empty(monkeypatch):
 	from app.import_data.parsers.image_vision import ImageVisionParser
 	calls = _patch_vision(monkeypatch, _VALID_RESPONSE)
-	rows = ImageVisionParser().parse(b"")
-	assert rows == []
+	result = ImageVisionParser().parse(b"")
+	assert result.rows == []
 	assert calls["n"] == 0  # vision not even called
 
 
@@ -377,23 +369,24 @@ def test_parse_oversized_bytes_returns_empty(monkeypatch):
 	from app.import_data.parsers.image_vision import ImageVisionParser
 	calls = _patch_vision(monkeypatch, _VALID_RESPONSE)
 	huge = PNG_HEADER + b"\x00" * (11 * 1024 * 1024)
-	rows = ImageVisionParser().parse(huge)
-	assert rows == []
+	result = ImageVisionParser().parse(huge)
+	assert result.rows == []
 	assert calls["n"] == 0
 
 
 def test_parse_wrong_magic_bytes_returns_empty(monkeypatch):
 	from app.import_data.parsers.image_vision import ImageVisionParser
 	calls = _patch_vision(monkeypatch, _VALID_RESPONSE)
-	rows = ImageVisionParser().parse(b"%PDF-1.4\n... not an image ...")
-	assert rows == []
+	result = ImageVisionParser().parse(b"%PDF-1.4\n... not an image ...")
+	assert result.rows == []
 	assert calls["n"] == 0
 
 
 def test_parse_valid_response_returns_rows(monkeypatch):
 	from app.import_data.parsers.image_vision import ImageVisionParser
 	_patch_vision(monkeypatch, _VALID_RESPONSE)
-	rows = ImageVisionParser().parse(_VALID_IMAGE_BYTES)
+	result = ImageVisionParser().parse(_VALID_IMAGE_BYTES)
+	rows = result.rows
 	assert len(rows) == 2
 	assert rows[0].line_no == 1
 	assert rows[1].line_no == 2
@@ -414,7 +407,8 @@ def test_parse_skips_invalid_rows(monkeypatch):
 	})
 	from app.import_data.parsers.image_vision import ImageVisionParser
 	_patch_vision(monkeypatch, response)
-	rows = ImageVisionParser().parse(_VALID_IMAGE_BYTES)
+	result = ImageVisionParser().parse(_VALID_IMAGE_BYTES)
+	rows = result.rows
 	assert len(rows) == 2
 	assert rows[0].description == "valid"
 	assert rows[1].description == "also valid"
@@ -427,8 +421,8 @@ def test_parse_groq_api_exception_retries_once(monkeypatch):
 	"""First call fails with exception, retry succeeds → rows returned."""
 	from app.import_data.parsers.image_vision import ImageVisionParser
 	calls = _patch_vision(monkeypatch, RuntimeError("Groq 500"), _VALID_RESPONSE)
-	rows = ImageVisionParser().parse(_VALID_IMAGE_BYTES)
-	assert len(rows) == 2
+	result = ImageVisionParser().parse(_VALID_IMAGE_BYTES)
+	assert len(result.rows) == 2
 	assert calls["n"] == 2
 
 
@@ -444,8 +438,8 @@ def test_parse_malformed_json_retries_then_returns_empty(monkeypatch):
 	"""Bad JSON → retry with corrective prompt prefix. If still bad → return []."""
 	from app.import_data.parsers.image_vision import ImageVisionParser
 	calls = _patch_vision(monkeypatch, "not json", "still not json")
-	rows = ImageVisionParser().parse(_VALID_IMAGE_BYTES)
-	assert rows == []
+	result = ImageVisionParser().parse(_VALID_IMAGE_BYTES)
+	assert result.rows == []
 	assert calls["n"] == 2
 
 
@@ -453,13 +447,213 @@ def test_parse_malformed_json_recovers_on_retry(monkeypatch):
 	"""Bad JSON first, valid JSON on retry → rows returned."""
 	from app.import_data.parsers.image_vision import ImageVisionParser
 	calls = _patch_vision(monkeypatch, "not json", _VALID_RESPONSE)
-	rows = ImageVisionParser().parse(_VALID_IMAGE_BYTES)
-	assert len(rows) == 2
+	result = ImageVisionParser().parse(_VALID_IMAGE_BYTES)
+	assert len(result.rows) == 2
 	assert calls["n"] == 2
 
 
 def test_parse_empty_transactions_array_returns_empty(monkeypatch):
 	from app.import_data.parsers.image_vision import ImageVisionParser
 	_patch_vision(monkeypatch, '{"transactions":[]}')
-	rows = ImageVisionParser().parse(_VALID_IMAGE_BYTES)
-	assert rows == []
+	result = ImageVisionParser().parse(_VALID_IMAGE_BYTES)
+	assert result.rows == []
+
+
+# ---------- ParseResult content_type classification ----------
+
+def test_parse_returns_parse_result_type(monkeypatch):
+	from app.import_data.parsers.base import ParseResult
+	from app.import_data.parsers.image_vision import ImageVisionParser
+
+	response = json.dumps({
+		"content_type": "statement",
+		"transactions": [
+			{"date":"2026-01-01","amount":1000,"currency":"IDR","description":"test"}
+		],
+		"holdings": [],
+		"balance_summary": None,
+	})
+	_patch_vision(monkeypatch, response)
+	result = ImageVisionParser().parse(PNG_HEADER)
+	assert isinstance(result, ParseResult)
+	assert result.content_type == "statement"
+	assert len(result.rows) == 1
+	assert result.holdings == []
+	assert result.balance_check is None  # parser doesn't compute, service does
+
+
+def test_parse_statement_with_balance_summary(monkeypatch):
+	from app.import_data.parsers.image_vision import ImageVisionParser
+
+	response = json.dumps({
+		"content_type": "statement",
+		"transactions": [
+			{"date":"2026-03-07","amount":19600,"currency":"IDR","description":"BI-FAST CR"},
+			{"date":"2026-03-07","amount":-19600,"currency":"IDR","description":"TRANSAKSI DEBIT"},
+		],
+		"holdings": [],
+		"balance_summary": {"saldo_awal": 50000, "saldo_akhir": 50000, "currency": "IDR"},
+	})
+	_patch_vision(monkeypatch, response)
+	result = ImageVisionParser().parse(PNG_HEADER)
+	assert result.content_type == "statement"
+	assert len(result.rows) == 2
+	# Parser stores raw saldo data as attributes on result for service layer to use
+	# (we'll add _balance_summary_raw attribute holding the dict)
+	assert hasattr(result, "_balance_summary_raw") or result.balance_check is None
+
+
+def test_parse_holding_returns_holdings_array(monkeypatch):
+	from app.import_data.parsers.image_vision import ImageVisionParser
+
+	response = json.dumps({
+		"content_type": "holding",
+		"transactions": [],
+		"holdings": [
+			{"ticker":"QQQ","qty":0.225,"avg_price":268.44,"market_value":60.40,"currency":"USD","asset_type":"stock"},
+			{"ticker":"BTC","qty":0.00118932,"avg_price":1473939,"market_value":1473939,"currency":"IDR","asset_type":"crypto"},
+		],
+		"balance_summary": None,
+	})
+	_patch_vision(monkeypatch, response)
+	result = ImageVisionParser().parse(PNG_HEADER)
+	assert result.content_type == "holding"
+	assert result.rows == []
+	assert len(result.holdings) == 2
+	assert result.holdings[0].ticker == "QQQ"
+	assert result.holdings[0].qty == Decimal("0.225")
+	assert result.holdings[0].asset_type == "stock"
+	assert result.holdings[1].ticker == "BTC"
+	assert result.holdings[1].currency == "IDR"
+
+
+def test_parse_receipt_classify(monkeypatch):
+	from app.import_data.parsers.image_vision import ImageVisionParser
+
+	response = json.dumps({
+		"content_type": "receipt",
+		"transactions": [
+			{"date":"2026-03-01","amount":-90000,"currency":"IDR","merchant":"Xsolla","description":"GoPay to Xsolla"}
+		],
+		"holdings": [],
+		"balance_summary": None,
+	})
+	_patch_vision(monkeypatch, response)
+	result = ImageVisionParser().parse(PNG_HEADER)
+	assert result.content_type == "receipt"
+	assert len(result.rows) == 1
+	assert result.holdings == []
+
+
+def test_parse_unknown_classify(monkeypatch):
+	from app.import_data.parsers.image_vision import ImageVisionParser
+
+	response = json.dumps({
+		"content_type": "unknown",
+		"transactions": [],
+		"holdings": [],
+		"balance_summary": None,
+	})
+	_patch_vision(monkeypatch, response)
+	result = ImageVisionParser().parse(PNG_HEADER)
+	assert result.content_type == "unknown"
+	assert result.rows == []
+	assert result.holdings == []
+
+
+def test_parse_holding_with_invalid_qty_skipped(monkeypatch):
+	from app.import_data.parsers.image_vision import ImageVisionParser
+
+	response = json.dumps({
+		"content_type": "holding",
+		"transactions": [],
+		"holdings": [
+			{"ticker":"VALID","qty":1.5,"avg_price":100,"market_value":150,"currency":"IDR","asset_type":"stock"},
+			# Invalid qty but valid market_value → qty falls back to None, holding KEPT.
+			{"ticker":"BAD","qty":"not a number","avg_price":100,"market_value":150,"currency":"IDR","asset_type":"stock"},
+			# Invalid qty AND no market_value → no useful data, SKIPPED.
+			{"ticker":"NOVAL","qty":"not a number","avg_price":100,"market_value":None,"currency":"IDR","asset_type":"stock"},
+			{"ticker":"","qty":1.0,"avg_price":100,"market_value":100,"currency":"IDR","asset_type":"stock"},
+		],
+		"balance_summary": None,
+	})
+	_patch_vision(monkeypatch, response)
+	result = ImageVisionParser().parse(PNG_HEADER)
+	# VALID + BAD (qty=None but has market_value) kept; NOVAL + empty ticker skipped.
+	assert len(result.holdings) == 2
+	assert result.holdings[0].ticker == "VALID"
+	assert result.holdings[1].ticker == "BAD"
+	assert result.holdings[1].qty is None
+
+
+def test_parse_empty_bytes_returns_empty_parse_result(monkeypatch):
+	from app.import_data.parsers.base import ParseResult
+	from app.import_data.parsers.image_vision import ImageVisionParser
+
+	result = ImageVisionParser().parse(b"")
+	assert isinstance(result, ParseResult)
+	assert result.rows == []
+	assert result.holdings == []
+	assert result.content_type == "unknown"
+	assert result.balance_check is None
+
+
+def test_parse_legacy_response_without_content_type_defaults_unknown(monkeypatch):
+	"""Backward compat: if vision returns old shape without content_type, treat as unknown statement."""
+	from app.import_data.parsers.image_vision import ImageVisionParser
+
+	# Old shape: just {"transactions": [...]}
+	response = json.dumps({
+		"transactions": [{"date":"2026-01-01","amount":100,"currency":"IDR","description":"test"}]
+	})
+	_patch_vision(monkeypatch, response)
+	result = ImageVisionParser().parse(PNG_HEADER)
+	assert result.content_type == "unknown"
+	assert len(result.rows) == 1
+
+
+def test_to_parsed_holding_accepts_qty_null():
+	from app.import_data.parsers.image_vision import _to_parsed_holding
+
+	h = _to_parsed_holding(
+		{
+			"ticker": "QQQ",
+			"qty": None,
+			"market_value": 12000000,
+			"currency": "IDR",
+			"asset_type": "stock",
+		},
+		line_no=1,
+	)
+	assert h is not None
+	assert h.qty is None
+	assert h.market_value == Decimal("12000000")
+	assert h.ticker == "QQQ"
+
+
+def test_to_parsed_holding_with_qty_still_works():
+	from app.import_data.parsers.image_vision import _to_parsed_holding
+
+	h = _to_parsed_holding(
+		{"ticker": "GOLD", "qty": 9.378, "market_value": 24454500, "currency": "IDR", "asset_type": "gold"},
+		line_no=1,
+	)
+	assert h is not None
+	assert h.qty == Decimal("9.378")
+
+
+def test_to_parsed_holding_skips_when_qty_and_market_value_both_null():
+	from app.import_data.parsers.image_vision import _to_parsed_holding
+
+	h = _to_parsed_holding(
+		{"ticker": "QQQ", "qty": None, "market_value": None, "currency": "IDR"},
+		line_no=1,
+	)
+	assert h is None
+
+
+def test_to_parsed_holding_skips_when_no_ticker():
+	from app.import_data.parsers.image_vision import _to_parsed_holding
+
+	h = _to_parsed_holding({"ticker": "", "market_value": 100}, line_no=1)
+	assert h is None

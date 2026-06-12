@@ -35,7 +35,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 from app.import_data.models import ImportSourceType
-from app.import_data.parsers.base import ParsedRow, register
+from app.import_data.parsers.base import ParsedRow, ParseResult, register
 
 
 _DATE_FORMATS = (
@@ -45,15 +45,16 @@ _DATE_FORMATS = (
 	"%m/%d/%Y",
 	"%d-%m-%Y",
 	"%d-%m-%y",
+	"%a, %b %d, %Y",  # Pluang export: "Sun, Aug 31, 2025"
 )
 
 
 # Canonical field → set of accepted header aliases (lowercase, trimmed).
 _HEADER_ALIASES: dict[str, set[str]] = {
-	"date": {"date", "tanggal", "tgl", "tanggal transaksi", "transaction date", "posting date", "trans date"},
-	"amount": {"amount", "jumlah", "nominal", "total", "mutasi", "value", "rupiah", "nilai"},
+	"date": {"date", "tanggal", "tgl", "tanggal transaksi", "transaction date", "posting date", "trans date", "order date"},
+	"amount": {"amount", "jumlah", "nominal", "total", "mutasi", "value", "rupiah", "nilai", "total amount"},
 	"merchant": {"merchant", "merchant name", "nama merchant", "payee", "penerima", "nama"},
-	"description": {"description", "deskripsi", "keterangan", "notes", "note", "catatan", "memo", "narasi", "remark", "remarks"},
+	"description": {"description", "deskripsi", "keterangan", "notes", "note", "catatan", "memo", "narasi", "remark", "remarks", "product name", "transaction"},
 	"category": {"category", "kategori", "label", "tag", "tags"},
 	"debit": {"debit", "pengeluaran", "expense", "keluar", "dr"},
 	"credit": {"kredit", "credit", "pemasukan", "income", "masuk", "cr"},
@@ -65,6 +66,9 @@ _HEADER_ALIASES: dict[str, set[str]] = {
 # dari kolom amount itu sendiri.
 _TYPE_DEBIT_VALUES = {"debit", "dr", "pengeluaran", "keluar", "out", "expense"}
 _TYPE_CREDIT_VALUES = {"kredit", "credit", "cr", "pemasukan", "masuk", "in", "income"}
+
+# Flattened set of every alias — for header-row scoring.
+_ALL_ALIASES: set[str] = set().union(*_HEADER_ALIASES.values())
 
 
 def _build_header_map(fieldnames: list[str | None]) -> dict[str, str]:
@@ -81,6 +85,24 @@ def _build_header_map(fieldnames: list[str | None]) -> dict[str, str]:
 				result[canonical] = raw
 				break
 	return result
+
+
+def _detect_header_row_index(rows: list[list[str]], max_scan: int = 20) -> int:
+	"""Scan up to `max_scan` rows; return the index of the row with the most
+	header-alias matches.
+
+	Banyak export (Pluang, beberapa bank) menaruh metadata di baris awal sebelum
+	header asli. Threshold: butuh ≥2 alias match supaya kebawa. Kalau tidak ada
+	yang qualify, return 0 (legacy — baris pertama dianggap header).
+	"""
+	best_idx = 0
+	best_score = 0
+	for i, raw in enumerate(rows[:max_scan]):
+		score = sum(1 for cell in raw if cell and cell.strip().lower() in _ALL_ALIASES)
+		if score > best_score:
+			best_score = score
+			best_idx = i
+	return best_idx if best_score >= 2 else 0
 
 
 def _parse_date(s: str) -> date:
@@ -169,25 +191,31 @@ def _resolve_amount(
 
 @register(ImportSourceType.manual_csv.value)
 class ManualCsvParser:
-	def parse(self, file_bytes: bytes) -> list[ParsedRow]:
+	def parse(self, file_bytes: bytes) -> ParseResult:
 		text = file_bytes.decode("utf-8-sig", errors="replace")
 		text = text.replace("\r\n", "\n").replace("\r", "\n")
 		delimiter = _detect_delimiter(text)
-		reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
-		fieldnames = list(reader.fieldnames or [])
+		all_rows = list(csv.reader(io.StringIO(text), delimiter=delimiter))
+		if not all_rows:
+			return ParseResult()
+
+		header_idx = _detect_header_row_index(all_rows)
+		fieldnames = [c.strip() for c in all_rows[header_idx]]
 		headers = _build_header_map(fieldnames)
 
 		# Minimum yang dibutuhkan: date + (amount atau debit/credit).
 		if "date" not in headers:
-			return []
+			return ParseResult()
 		has_amount_source = (
 			"amount" in headers or ("debit" in headers and "credit" in headers)
 		)
 		if not has_amount_source:
-			return []
+			return ParseResult()
 
 		rows: list[ParsedRow] = []
-		for i, raw in enumerate(reader, start=2):
+		# File line of first data row = header_idx + 2 (1-based, header is +1).
+		for i, raw_cells in enumerate(all_rows[header_idx + 1 :], start=header_idx + 2):
+			raw = dict(zip(fieldnames, raw_cells))
 			try:
 				date_str = (raw.get(headers["date"]) or "").strip()
 				if not date_str:
@@ -211,7 +239,7 @@ class ManualCsvParser:
 				)
 			except (KeyError, ValueError, InvalidOperation):
 				continue
-		return rows
+		return ParseResult(rows=rows)
 
 
 def _pick(

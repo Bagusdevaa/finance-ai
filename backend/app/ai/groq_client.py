@@ -112,3 +112,32 @@ def vision_complete(
 		response_format={"type": "json_object"},
 	)
 	return response.choices[0].message.content or ""
+
+
+def text_complete(
+	system_prompt: str,
+	user_prompt: str,
+	*,
+	model: str | None = None,
+	max_tokens: int = 2048,
+) -> str:
+	"""Single-shot text completion with JSON output. Sync (orchestrator runs
+	sync inference inside the background task, like vision_complete).
+
+	Temperature 0.1 — structured mapping output, deterministic. Used for recipe
+	inference: the model maps columns/rules, it never transcribes row numbers.
+
+	Returns raw assistant content string. Empty string if model returned None.
+	"""
+	client = _get_sync_client()
+	response = client.chat.completions.create(
+		model=model or _settings.GROQ_MODEL,
+		messages=[
+			{"role": "system", "content": system_prompt},
+			{"role": "user", "content": user_prompt},
+		],
+		temperature=0.1,
+		max_tokens=max_tokens,
+		response_format={"type": "json_object"},
+	)
+	return response.choices[0].message.content or ""

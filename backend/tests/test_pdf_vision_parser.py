@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.import_data.parsers.base import ParsedRow
+from app.import_data.parsers.base import ParsedRow, ParseResult
 
 
 def _make_row(line_no: int, desc: str = "test") -> ParsedRow:
@@ -29,8 +29,8 @@ def _make_row(line_no: int, desc: str = "test") -> ParsedRow:
 
 
 def _setup_mocks(monkeypatch, num_pages: int, rows_per_page: list[list[ParsedRow]]):
-	"""Mock fitz.open to return doc with N pages, and ImageVisionParser to
-	return rows_per_page[i] for page i. Returns the captured call counts."""
+	"""Mock fitz.open to return doc with N pages, and ImageVisionParser to return
+	ParseResult with rows_per_page[i] for page i."""
 	from app.import_data.parsers import pdf_vision
 
 	pages = []
@@ -49,7 +49,7 @@ def _setup_mocks(monkeypatch, num_pages: int, rows_per_page: list[list[ParsedRow
 	def fake_parse(self, file_bytes):
 		i = call_idx["n"]
 		call_idx["n"] += 1
-		return rows_per_page[i]
+		return ParseResult(rows=rows_per_page[i], content_type="statement")
 	monkeypatch.setattr(pdf_vision.ImageVisionParser, "parse", fake_parse)
 	return call_idx
 
@@ -60,14 +60,14 @@ def test_pdf_vision_parse_corrupted_pdf_returns_empty(monkeypatch):
 		raise ValueError("corrupted")
 	monkeypatch.setattr(pdf_vision.fitz, "open", _raise)
 	parser = pdf_vision.PdfVisionParser()
-	assert parser.parse(b"garbage") == []
+	assert parser.parse(b"garbage").rows == []
 
 
 def test_pdf_vision_parse_empty_pdf_returns_empty(monkeypatch):
 	from app.import_data.parsers import pdf_vision
 	_setup_mocks(monkeypatch, num_pages=0, rows_per_page=[])
 	parser = pdf_vision.PdfVisionParser()
-	assert parser.parse(b"%PDF-1.4 mock") == []
+	assert parser.parse(b"%PDF-1.4 mock").rows == []
 
 
 def test_pdf_vision_parse_single_page(monkeypatch):
@@ -78,7 +78,8 @@ def test_pdf_vision_parse_single_page(monkeypatch):
 		rows_per_page=[[_make_row(1, "row a"), _make_row(2, "row b")]],
 	)
 	parser = pdf_vision.PdfVisionParser()
-	rows = parser.parse(b"%PDF-1.4 mock")
+	result = parser.parse(b"%PDF-1.4 mock")
+	rows = result.rows
 	assert len(rows) == 2
 	assert rows[0].line_no == 1
 	assert rows[1].line_no == 2
@@ -100,7 +101,8 @@ def test_pdf_vision_parse_concats_multiple_pages_with_global_line_no(monkeypatch
 		],
 	)
 	parser = pdf_vision.PdfVisionParser()
-	rows = parser.parse(b"%PDF-1.4 mock")
+	result = parser.parse(b"%PDF-1.4 mock")
+	rows = result.rows
 	assert len(rows) == 6
 	# Verify global line_no renumber
 	assert [r.line_no for r in rows] == [1, 2, 3, 4, 5, 6]
@@ -130,11 +132,12 @@ def test_pdf_vision_parse_skips_page_on_rasterize_failure(monkeypatch):
 	def fake_parse(self, file_bytes):
 		i = call_idx["n"]
 		call_idx["n"] += 1
-		return [_make_row(1, f"page-call-{i}")]
+		return ParseResult(rows=[_make_row(1, f"page-call-{i}")], content_type="statement")
 	monkeypatch.setattr(pdf_vision.ImageVisionParser, "parse", fake_parse)
 
 	parser = pdf_vision.PdfVisionParser()
-	rows = parser.parse(b"%PDF mock")
+	result = parser.parse(b"%PDF mock")
+	rows = result.rows
 	assert len(rows) == 2  # pages 1 + 3 (page 2 skipped)
 	assert [r.line_no for r in rows] == [1, 2]
 	assert [r.description for r in rows] == ["page-call-0", "page-call-1"]
@@ -161,11 +164,12 @@ def test_pdf_vision_parse_skips_page_on_vision_failure(monkeypatch):
 		call_idx["n"] += 1
 		if i == 1:
 			raise RuntimeError("groq down")
-		return [_make_row(1, f"page-{i}")]
+		return ParseResult(rows=[_make_row(1, f"page-{i}")], content_type="statement")
 	monkeypatch.setattr(pdf_vision.ImageVisionParser, "parse", fake_parse)
 
 	parser = pdf_vision.PdfVisionParser()
-	rows = parser.parse(b"%PDF mock")
+	result = parser.parse(b"%PDF mock")
+	rows = result.rows
 	assert len(rows) == 2
 	assert [r.description for r in rows] == ["page-0", "page-2"]
 
@@ -185,7 +189,7 @@ def test_pdf_vision_parse_passes_png_bytes_to_image_parser(monkeypatch):
 	captured = {}
 	def fake_parse(self, file_bytes):
 		captured["bytes"] = file_bytes
-		return []
+		return ParseResult()
 	monkeypatch.setattr(pdf_vision.ImageVisionParser, "parse", fake_parse)
 
 	pdf_vision.PdfVisionParser().parse(b"%PDF mock")
@@ -194,3 +198,68 @@ def test_pdf_vision_parse_passes_png_bytes_to_image_parser(monkeypatch):
 	page.get_pixmap.assert_called_once_with(dpi=150)
 	# Verify tobytes called with "png"
 	pix.tobytes.assert_called_once_with("png")
+
+
+def test_pdf_vision_aggregates_holdings_across_pages(monkeypatch):
+	from app.import_data.parsers import pdf_vision
+	from app.import_data.parsers.base import ParsedHolding
+
+	pages = []
+	for i in range(2):
+		page = MagicMock()
+		pix = MagicMock()
+		pix.tobytes.return_value = b"png" + str(i).encode()
+		page.get_pixmap.return_value = pix
+		pages.append(page)
+	mock_doc = MagicMock()
+	mock_doc.__iter__.return_value = iter(pages)
+	monkeypatch.setattr(pdf_vision.fitz, "open", lambda **kw: mock_doc)
+
+	def fake_parse(self, file_bytes):
+		# Page 1: 1 holding, page 2: 2 holdings
+		if file_bytes.endswith(b"0"):
+			return ParseResult(
+				rows=[],
+				holdings=[ParsedHolding(line_no=1, ticker="QQQ", qty=Decimal("0.225"))],
+				content_type="holding",
+			)
+		return ParseResult(
+			rows=[],
+			holdings=[
+				ParsedHolding(line_no=1, ticker="BTC", qty=Decimal("0.001")),
+				ParsedHolding(line_no=2, ticker="GOLD", qty=Decimal("9.378")),
+			],
+			content_type="holding",
+		)
+	monkeypatch.setattr(pdf_vision.ImageVisionParser, "parse", fake_parse)
+
+	result = pdf_vision.PdfVisionParser().parse(b"%PDF mock")
+	assert result.content_type == "holding"
+	assert len(result.holdings) == 3
+	# Global line_no renumber
+	assert [h.line_no for h in result.holdings] == [1, 2, 3]
+	assert [h.ticker for h in result.holdings] == ["QQQ", "BTC", "GOLD"]
+
+
+def test_pdf_vision_content_type_majority_vote(monkeypatch):
+	from app.import_data.parsers import pdf_vision
+
+	pages = [MagicMock() for _ in range(3)]
+	for i, p in enumerate(pages):
+		pix = MagicMock()
+		pix.tobytes.return_value = b"png" + str(i).encode()
+		p.get_pixmap.return_value = pix
+	mock_doc = MagicMock()
+	mock_doc.__iter__.return_value = iter(pages)
+	monkeypatch.setattr(pdf_vision.fitz, "open", lambda **kw: mock_doc)
+
+	types = ["statement", "statement", "receipt"]
+	call_idx = {"n": 0}
+	def fake_parse(self, file_bytes):
+		i = call_idx["n"]
+		call_idx["n"] += 1
+		return ParseResult(content_type=types[i])
+	monkeypatch.setattr(pdf_vision.ImageVisionParser, "parse", fake_parse)
+
+	result = pdf_vision.PdfVisionParser().parse(b"%PDF mock")
+	assert result.content_type == "statement"  # 2 of 3 votes
