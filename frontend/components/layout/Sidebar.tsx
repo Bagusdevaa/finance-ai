@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { useState, createContext, useContext, useCallback, useEffect, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/cn";
+import { useAuthStore } from "@/lib/auth-store";
+import { logout as apiLogout } from "@/lib/api/auth";
 
 interface NavItem {
 	href: string;
@@ -70,7 +72,7 @@ const ToggleIcon = ({ className }: { className?: string }) => (
 
 const navItems: NavItem[] = [
 	{ href: "/dashboard", label: "Dashboard", icon: DashboardIcon },
-	{ href: "/transactions", label: "Transaksi", icon: TxIcon, badge: "12" },
+	{ href: "/transactions", label: "Transaksi", icon: TxIcon },
 	{ href: "/assets", label: "Aset & Portofolio", icon: PieIcon },
 	{ href: "/budget", label: "Anggaran", icon: TargetIcon },
 	{ href: "/import", label: "Import Data", icon: UploadIcon },
@@ -202,14 +204,28 @@ function SidebarLink({
 }
 
 function UserPill({ collapsed }: { collapsed: boolean }) {
-	const name = "Bagus Deva";
-	const email = "bagus@constructland.com";
-	const initial = name.charAt(0).toUpperCase();
+	const user = useAuthStore((s) => s.user);
+	const clearAuth = useAuthStore((s) => s.clearAuth);
+	const name = user?.name ?? "—";
+	const email = user?.email ?? "";
+	const initial = (name || "?").charAt(0).toUpperCase();
+
+	const handleLogout = async () => {
+		try {
+			await apiLogout();
+		} catch {
+			// proceed with local cleanup even if backend call fails
+		}
+		clearAuth();
+		if (typeof window !== "undefined") {
+			window.location.href = "/login";
+		}
+	};
 
 	return (
 		<div
 			className={cn(
-				"flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 transition-colors duration-200 ease-designhub hover:bg-gray-50",
+				"flex items-center gap-2.5 rounded-lg px-2.5 py-2 transition-colors duration-200 ease-designhub hover:bg-gray-50",
 				collapsed && "justify-center px-0",
 			)}
 		>
@@ -221,10 +237,25 @@ function UserPill({ collapsed }: { collapsed: boolean }) {
 				{initial}
 			</div>
 			{!collapsed && (
-				<div className="min-w-0">
-					<div className="truncate text-[13px] font-medium leading-tight text-gray-950">{name}</div>
-					<div className="truncate text-[11px] leading-tight text-gray-500">{email}</div>
-				</div>
+				<>
+					<div className="min-w-0 flex-1">
+						<div className="truncate text-[13px] font-medium leading-tight text-gray-950">{name}</div>
+						<div className="truncate text-[11px] leading-tight text-gray-500">{email}</div>
+					</div>
+					<button
+						type="button"
+						onClick={handleLogout}
+						aria-label="Keluar"
+						title="Keluar"
+						className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-950"
+					>
+						<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+							<path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
+							<polyline points="16 17 21 12 16 7" />
+							<line x1="21" y1="12" x2="9" y2="12" />
+						</svg>
+					</button>
+				</>
 			)}
 		</div>
 	);

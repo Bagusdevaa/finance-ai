@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
-import { Instrument_Serif } from "next/font/google";
 import "./globals.css";
+import { QueryProvider } from "@/lib/query-client";
+import { AuthHydrate } from "@/lib/auth-hydrate";
 
 const geistSans = localFont({
 	src: "./fonts/GeistVF.woff",
@@ -15,10 +16,11 @@ const geistMono = localFont({
 	weight: "100 900",
 });
 
-const instrumentSerif = Instrument_Serif({
-	subsets: ["latin"],
-	weight: "400",
+// Self-hosted supaya gak butuh network ke fonts.gstatic.com.
+const instrumentSerif = localFont({
+	src: "./fonts/InstrumentSerif-Regular.woff2",
 	variable: "--font-instrument-serif",
+	weight: "400",
 	display: "swap",
 });
 
@@ -37,7 +39,10 @@ export default function RootLayout({
 			<body
 				className={`${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable} font-sans antialiased bg-white text-black`}
 			>
-				{children}
+				<QueryProvider>
+					<AuthHydrate />
+					{children}
+				</QueryProvider>
 			</body>
 		</html>
 	);

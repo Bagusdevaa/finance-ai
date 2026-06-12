@@ -1,26 +1,19 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, type KeyboardEvent } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSidebar } from "@/components/layout/Sidebar";
 import { cn } from "@/lib/cn";
+import { listSessions, createSession, getSession, deleteSession, postMessageStream } from "@/lib/api/chat";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { getTransaction } from "@/lib/api/transactions";
+import { getErrorMessage } from "@/lib/api";
+import { formatRupiah } from "@/lib/formatRupiah";
+import type { ChatMessageResponse, ChatSessionResponse } from "@/lib/api/types";
 
 const easeDesignhub = [0.2, 0.7, 0.2, 1] as const;
-
-interface Message {
-	id: string;
-	role: "user" | "ai";
-	content: string;
-	time: string;
-}
-
-interface DataSource {
-	id: string;
-	name: string;
-	sub: string;
-	active: boolean;
-}
 
 const PROMPTS = [
 	{ label: "PENGELUARAN", q: "Bulan ini aku paling boros di mana?" },
@@ -29,65 +22,26 @@ const PROMPTS = [
 	{ label: "CASH FLOW", q: "Kapan terakhir saya punya cash flow positif?" },
 ];
 
-const HISTORY = [
-	{ title: "Analisis pengeluaran Januari", when: "3 hari lalu · 8 pesan" },
-	{ title: "Budget makan bulan ini", when: "1 minggu lalu · 5 pesan" },
-	{ title: "Saham mana yang harus dijual?", when: "2 minggu lalu · 12 pesan" },
-	{ title: "Persiapan dana darurat", when: "1 bulan lalu · 6 pesan" },
-];
-
-function nowTime(): string {
-	const d = new Date();
-	return d.getHours().toString().padStart(2, "0") + ":" + d.getMinutes().toString().padStart(2, "0");
+function formatTime(iso: string): string {
+	try {
+		const d = new Date(iso);
+		return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+	} catch {
+		return "";
+	}
 }
 
-function getAiResponse(qLower: string): string {
-	if (qLower.includes("boros") || qLower.includes("kategori") || qLower.includes("habis")) {
-		return `<p>Berdasarkan 127 transaksi BCA bulan Februari, ini distribusi pengeluaran kamu:</p>
-<table class="ai-table"><thead><tr><th>Kategori</th><th class="num">Total</th><th class="num">% Pengeluaran</th></tr></thead><tbody>
-<tr><td><strong>Makanan &amp; F&amp;B</strong></td><td class="num">Rp 1.485.000</td><td class="num pct">40,8%</td></tr>
-<tr><td>Transportasi</td><td class="num">Rp 624.000</td><td class="num pct">17,1%</td></tr>
-<tr><td>Belanja online</td><td class="num">Rp 558.000</td><td class="num pct">15,3%</td></tr>
-<tr><td>Tagihan &amp; subscription</td><td class="num">Rp 451.000</td><td class="num pct">12,4%</td></tr>
-<tr><td>Hiburan &amp; lainnya</td><td class="num">Rp 522.000</td><td class="num pct">14,4%</td></tr>
-</tbody></table>
-<p>Top 3 merchant yang paling sering: <strong>Gojek &amp; Grab Food</strong> (24× transaksi), <strong>Starbucks</strong> (8×), dan <strong>Tokopedia</strong> (11×).</p>
-<div class="ai-callout"><strong>Insight</strong> — kamu menghabiskan <strong>40,8% pengeluaran untuk makanan</strong>, naik dari 32% bulan lalu. Sebagian besar dari delivery online.</div>
-<div class="src-pills"><span class="src-pill">BCA Feb 2026</span><span class="src-pill">127 transaksi</span></div>`;
-	}
-	if (qLower.includes("langganan") || qLower.includes("subscription") || qLower.includes("nabung") || qLower.includes("makan")) {
-		return `<p>Aku hitungkan untuk kamu. Saat ini pengeluaran makanan kamu <strong>Rp 1.485.000 / bulan</strong>. Kalau dipangkas 50%, kamu akan menabung tambahan <strong>Rp 742.500 / bulan</strong> atau <strong>Rp 8.910.000 / tahun</strong>.</p>
-<div class="ai-chart"><div class="head"><span>Proyeksi tabungan setahun</span><span>+Rp 8,9 jt</span></div>
-<div class="bars"><div class="col"><div class="stack"><div class="seg cur" style="height:32%"></div></div><div class="lbl">Saat ini</div><div class="val">29%</div></div>
-<div class="col"><div class="stack"><div class="seg cur" style="height:42%"></div></div><div class="lbl">−25% makan</div><div class="val">36%</div></div>
-<div class="col"><div class="stack"><div class="seg cur" style="height:55%"></div></div><div class="lbl">−50% makan</div><div class="val">42%</div></div>
-<div class="col"><div class="stack"><div class="seg cur" style="height:72%"></div></div><div class="lbl">−50% + langganan</div><div class="val">48%</div></div>
-</div><div class="ai-legend"><span class="cur">Saving rate</span></div></div>
-<p>Kalau ditambah pemangkasan langganan yang jarang dipakai (<strong>Netflix Premium</strong> Rp 186rb &amp; <strong>Spotify Premium</strong> Rp 55rb), saving rate kamu naik dari <strong>29% → 48%</strong>.</p>
-<div class="ai-callout"><strong>Rekomendasi</strong> — mulai dari memasak 2× seminggu di rumah. Berdasarkan rata-rata Gojek/Grab kamu Rp 58rb per order, ini menghemat ~Rp 460rb per bulan.</div>
-<div class="src-pills"><span class="src-pill">BCA</span><span class="src-pill">Bibit</span><span class="src-pill">Stockbit</span></div>`;
-	}
-	if (qLower.includes("bandingkan") || qLower.includes("3 bulan") || qLower.includes("tren")) {
-		return `<p>Ini perbandingan pengeluaran kamu 3 bulan terakhir:</p>
-<div class="ai-chart"><div class="head"><span>Pengeluaran bulanan</span><span>↑ +14% rata-rata</span></div>
-<div class="bars"><div class="col"><div class="stack"><div class="seg cur" style="height:55%"></div></div><div class="lbl">Des 25</div><div class="val">2,8jt</div></div>
-<div class="col"><div class="stack"><div class="seg cur" style="height:64%"></div></div><div class="lbl">Jan 26</div><div class="val">3,2jt</div></div>
-<div class="col"><div class="stack"><div class="seg cur" style="height:78%"></div></div><div class="lbl">Feb 26</div><div class="val">3,6jt</div></div>
-</div></div>
-<p>Pengeluaran kamu naik <strong>+14% rata-rata per bulan</strong>. Kategori dengan kenaikan paling tajam: <strong>Makanan +28%</strong> dan <strong>Belanja online +19%</strong>.</p>
-<div class="ai-callout"><strong>Trend alert</strong> — kalau kecepatan kenaikan ini berlanjut, di Mei pengeluaran kamu bisa tembus Rp 5,3 jt/bulan.</div>`;
-	}
-	if (qLower.includes("cash flow") || qLower.includes("positif") || qLower.includes("terakhir")) {
-		return `<p>Cash flow kamu (pemasukan − pengeluaran) <strong>positif setiap bulan dalam 6 bulan terakhir</strong>. Surplus terbesar: <strong>Desember 2025 (Rp 9,4 jt)</strong> karena bonus akhir tahun.</p>
-<table class="ai-table"><thead><tr><th>Bulan</th><th class="num">Masuk</th><th class="num">Keluar</th><th class="num">Surplus</th></tr></thead><tbody>
-<tr><td>Feb 2026</td><td class="num">Rp 12.500.000</td><td class="num">Rp 3.640.000</td><td class="num">+Rp 8.860.000</td></tr>
-<tr><td>Jan 2026</td><td class="num">Rp 12.500.000</td><td class="num">Rp 3.180.000</td><td class="num">+Rp 9.320.000</td></tr>
-<tr><td>Des 2025</td><td class="num">Rp 21.800.000</td><td class="num">Rp 12.420.000</td><td class="num">+Rp 9.380.000</td></tr>
-</tbody></table>
-<p>Terakhir kali kamu cash flow <strong>negatif</strong> adalah <strong>Juni 2025</strong> — surplus minus Rp 1,2 jt karena ada renovasi.</p>`;
-	}
-	return `<p>Aku belum punya data yang cukup untuk menjawab itu. Coba salah satu dari ini:</p>
-<ul style="margin:6px 0 0;padding-left:20px;font-size:13px"><li>“Bulan ini aku paling boros di mana?”</li><li>“Bandingkan pengeluaran 3 bulan terakhir”</li><li>“Berapa total kekayaan bersih saya?”</li></ul>`;
+function formatRelative(iso: string | null): string {
+	if (!iso) return "Belum ada pesan";
+	const d = new Date(iso);
+	const now = new Date();
+	const diff = now.getTime() - d.getTime();
+	const day = 24 * 60 * 60 * 1000;
+	if (diff < 60_000) return "Baru saja";
+	if (diff < 60 * 60_000) return `${Math.floor(diff / 60_000)} menit lalu`;
+	if (diff < day) return `${Math.floor(diff / (60 * 60_000))} jam lalu`;
+	if (diff < 7 * day) return `${Math.floor(diff / day)} hari lalu`;
+	return d.toLocaleDateString("id-ID", { day: "numeric", month: "short" });
 }
 
 const msgVariants = {
@@ -122,23 +76,87 @@ function ChatMobileMenuButton() {
 	);
 }
 
+interface StreamingState {
+	user: string;
+	assistant: string;
+	sources: string[];
+	error?: string;
+}
+
 export default function ChatPage() {
 	const router = useRouter();
-	const [messages, setMessages] = useState<Message[]>([]);
+	const queryClient = useQueryClient();
+
+	const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 	const [inputValue, setInputValue] = useState("");
-	const [isTyping, setIsTyping] = useState(false);
+	const [streaming, setStreaming] = useState<StreamingState | null>(null);
 	const [showToast, setShowToast] = useState(false);
 	const [showMobileHistory, setShowMobileHistory] = useState(false);
-	const [dataSources, setDataSources] = useState<DataSource[]>([
-		{ id: "bca", name: "BCA Mutasi Feb 2026", sub: "127 transaksi · diperbarui 2 jam lalu", active: true },
-		{ id: "stockbit", name: "Stockbit Portfolio", sub: "5 saham · Rp 52,1 jt", active: true },
-		{ id: "bibit", name: "Bibit Reksa Dana", sub: "3 produk · Rp 89,4 jt", active: true },
-		{ id: "gopay", name: "GoPay", sub: "Belum dihubungkan", active: false },
-	]);
 
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
-	const seeded = useRef(false);
+	const abortRef = useRef<AbortController | null>(null);
+
+	const { data: sessions } = useQuery({
+		queryKey: ["chat-sessions"],
+		queryFn: listSessions,
+	});
+
+	// Auto-pick first session pada mount awal (sekali saja). Setelah itu,
+	// `activeSessionId === null` artinya user explicitly di "Chat Baru" mode —
+	// jangan auto-pick supaya empty state tetap muncul.
+	const didInitialPickRef = useRef(false);
+	useEffect(() => {
+		if (didInitialPickRef.current) return;
+		if (!sessions) return;
+		didInitialPickRef.current = true;
+		if (sessions.length > 0) {
+			setActiveSessionId(sessions[0].id);
+		}
+	}, [sessions]);
+
+	const { data: sessionDetail } = useQuery({
+		queryKey: ["chat-session", activeSessionId],
+		queryFn: () => getSession(activeSessionId!),
+		enabled: !!activeSessionId,
+	});
+
+	const messages: ChatMessageResponse[] = useMemo(
+		() => sessionDetail?.messages ?? [],
+		[sessionDetail],
+	);
+
+	const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+
+	const deleteSessionMutation = useMutation({
+		mutationFn: (id: string) => deleteSession(id),
+		onSuccess: (_, deletedId) => {
+			// Update cache dulu sebelum invalidate — supaya auto-pick effect
+			// nggak nyangkut milih session yang baru saja dihapus.
+			queryClient.setQueryData<ChatSessionResponse[]>(
+				["chat-sessions"],
+				(old) => (old ?? []).filter((s) => s.id !== deletedId),
+			);
+
+			// empty "Chat Baru" state, biar user pilih sendiri mau lanjut ke mana.
+			if (deletedId === activeSessionId) {
+				setActiveSessionId(null);
+			}
+			queryClient.invalidateQueries({ queryKey: ["chat-sessions"] });
+			queryClient.removeQueries({ queryKey: ["chat-session", deletedId] });
+			setPendingDeleteId(null);
+		},
+		onError: () => setPendingDeleteId(null),
+	});
+
+	const handleDeleteSession = useCallback((id: string) => {
+		setPendingDeleteId(id);
+	}, []);
+
+	const pendingDeleteSession = useMemo(
+		() => sessions?.find((s) => s.id === pendingDeleteId) ?? null,
+		[sessions, pendingDeleteId],
+	);
 
 	const scrollToBottom = useCallback(() => {
 		requestAnimationFrame(() => {
@@ -146,80 +164,70 @@ export default function ChatPage() {
 		});
 	}, []);
 
-	const sendMessage = useCallback((text: string) => {
-		if (!text.trim()) return;
-		const userMsg: Message = {
-			id: crypto.randomUUID(),
-			role: "user",
-			content: text.trim(),
-			time: nowTime(),
-		};
-		setMessages((prev) => [...prev, userMsg]);
+	useEffect(() => {
+		scrollToBottom();
+	}, [messages, streaming, scrollToBottom]);
+
+	const sendMessage = useCallback(async (text: string) => {
+		const content = text.trim();
+		if (!content) return;
+
+		// Ensure we have a session.
+		let sessionId = activeSessionId;
+		if (!sessionId) {
+			const created = await createSession();
+			sessionId = created.id;
+			setActiveSessionId(sessionId);
+			queryClient.invalidateQueries({ queryKey: ["chat-sessions"] });
+		}
+
 		setInputValue("");
 		if (textareaRef.current) {
 			textareaRef.current.style.height = "auto";
 		}
 
-		setTimeout(() => {
-			setIsTyping(true);
-			setTimeout(() => {
-				setIsTyping(false);
-				const aiMsg: Message = {
-					id: crypto.randomUUID(),
-					role: "ai",
-					content: getAiResponse(text.toLowerCase()),
-					time: nowTime(),
-				};
-				setMessages((prev) => [...prev, aiMsg]);
-			}, 1500);
-		}, 280);
-	}, []);
+		setStreaming({ user: content, assistant: "", sources: [] });
 
-	useEffect(() => {
-		scrollToBottom();
-	}, [messages, isTyping, scrollToBottom]);
+		const ctrl = new AbortController();
+		abortRef.current = ctrl;
 
-	useEffect(() => {
-		if (seeded.current) return;
-		seeded.current = true;
-		const seed: Message[] = [
-			{ id: "s1", role: "user", content: "Bulan ini aku paling boros di mana?", time: "09:15" },
-			{ id: "s2", role: "ai", content: getAiResponse("boros"), time: "09:15" },
-			{ id: "s3", role: "user", content: "Kalau aku kurangi 50% pengeluaran makan, bisa nabung berapa?", time: "09:16" },
-			{ id: "s4", role: "ai", content: getAiResponse("makan"), time: "09:16" },
-		];
-		setMessages(seed);
-		setTimeout(() => {
-			setIsTyping(true);
-			setTimeout(() => {
-				setIsTyping(false);
-				setMessages((prev) => [
-					...prev,
-					{
-						id: "s5",
-						role: "ai",
-						content: "<p>Mau aku bantu hitung skenario yang lebih agresif (misal pangkas 75%)? Atau pilih kategori lain untuk dianalisis?</p>",
-						time: nowTime(),
-					},
-				]);
-			}, 4200);
-		}, 500);
-	}, []);
+		try {
+			for await (const event of postMessageStream(sessionId, content, ctrl.signal)) {
+				if (event.type === "context") {
+					setStreaming((s) => (s ? { ...s, sources: event.sources ?? [] } : s));
+				} else if (event.type === "token") {
+					setStreaming((s) => (s ? { ...s, assistant: s.assistant + (event.content ?? "") } : s));
+				} else if (event.type === "error") {
+					setStreaming((s) => (s ? { ...s, error: event.message ?? "Error" } : s));
+					break;
+				}
+			}
+		} catch (err) {
+			setStreaming((s) => (s ? { ...s, error: getErrorMessage(err, "Stream gagal.") } : s));
+		} finally {
+			abortRef.current = null;
+			queryClient.invalidateQueries({ queryKey: ["chat-session", sessionId] });
+			queryClient.invalidateQueries({ queryKey: ["chat-sessions"] });
+			// Slight delay so user sees final token before overlay clears.
+			setTimeout(() => setStreaming(null), 150);
+		}
+	}, [activeSessionId, queryClient]);
 
 	const handleNewChat = () => {
-		setMessages([]);
-		setIsTyping(false);
-		setInputValue("");
+		// Lazy: belum bikin session di DB. Empty state ditampilkan;
+		// session beneran dibuat saat user kirim pesan pertama.
+		setActiveSessionId(null);
+		setShowMobileHistory(false);
 	};
 
 	const handleShare = () => {
 		const text = messages
 			.map((m) => {
 				const prefix = m.role === "user" ? "Kamu" : "AI";
-				const plain = m.content.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&mdash;/g, "—");
-				return `[${m.time}] ${prefix}: ${plain}`;
+				return `[${formatTime(m.created_at)}] ${prefix}: ${m.content}`;
 			})
 			.join("\n\n");
+		if (!text) return;
 		navigator.clipboard.writeText(text).then(() => {
 			setShowToast(true);
 			setTimeout(() => setShowToast(false), 2000);
@@ -241,44 +249,12 @@ export default function ChatPage() {
 		}
 	};
 
-	const toggleSource = (id: string) => {
-		setDataSources((prev) =>
-			prev.map((s) => (s.id === id ? { ...s, active: !s.active } : s)),
-		);
-	};
-
-	const activeSources = dataSources.filter((s) => s.active).length;
+	const sessionList: ChatSessionResponse[] = sessions ?? [];
+	const isStreaming = streaming !== null;
+	const showEmpty = messages.length === 0 && !isStreaming;
 
 	return (
 		<>
-			<style jsx global>{`
-				.ai-msg-content { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-				.ai-table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 12.5px; border: 1px solid #e8e8e8; min-width: 340px; }
-				.ai-table th { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: #a3a3a3; font-weight: 500; padding: 8px 10px; text-align: left; background: #fafafa; border-bottom: 1px solid #e8e8e8; }
-				.ai-table th.num { text-align: right; }
-				.ai-table td { padding: 8px 10px; border-bottom: 1px solid #f4f4f4; }
-				.ai-table td.num { text-align: right; font-family: var(--font-geist-mono), monospace; font-variant-numeric: tabular-nums; font-weight: 500; color: #0a0a0a; }
-				.ai-table tr:last-child td { border-bottom: none; }
-				.ai-table .pct { font-family: var(--font-geist-mono), monospace; font-size: 11px; color: #737373; }
-				.ai-chart { margin: 14px 0 6px; border: 1px solid #e8e8e8; padding: 14px; }
-				.ai-chart .head { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: #a3a3a3; font-weight: 500; margin-bottom: 14px; display: flex; justify-content: space-between; }
-				.ai-chart .head span:last-child { color: #404040; font-family: var(--font-geist-mono), monospace; }
-				.ai-chart .bars { display: flex; align-items: flex-end; gap: 18px; height: 120px; padding: 0 4px; }
-				.ai-chart .col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; }
-				.ai-chart .stack { height: 100%; width: 100%; max-width: 36px; display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; position: relative; }
-				.ai-chart .seg { width: 100%; background: #d4d4d4; transform-origin: bottom; animation: chatGrow 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) forwards; }
-				.ai-chart .seg.cur { background: #0a0a0a; }
-				@keyframes chatGrow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
-				.ai-chart .col .lbl { font-family: var(--font-geist-mono), monospace; font-size: 10px; color: #737373; letter-spacing: 0.04em; }
-				.ai-chart .col .val { font-family: var(--font-geist-mono), monospace; font-size: 11px; color: #0a0a0a; font-weight: 500; font-variant-numeric: tabular-nums; }
-				.ai-legend { display: flex; gap: 14px; margin-top: 12px; font-size: 11px; color: #737373; font-family: var(--font-geist-mono), monospace; }
-				.ai-legend .cur::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px; vertical-align: middle; background: #0a0a0a; }
-				.ai-callout { margin: 10px 0 0; padding: 10px 12px; background: #fafafa; border-left: 2px solid #0a0a0a; font-size: 13px; color: #262626; }
-				.ai-callout strong { color: #0a0a0a; font-family: var(--font-geist-mono), monospace; font-size: 14px; }
-				.src-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e8e8e8; }
-				.src-pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 999px; background: #fafafa; border: 1px solid #e8e8e8; font-size: 10px; color: #737373; font-family: var(--font-geist-mono), monospace; letter-spacing: 0.02em; }
-			`}</style>
-
 			<div className="grid h-[calc(100vh)] grid-rows-[64px_1fr] max-[1100px]:grid-cols-[1fr] grid-cols-[1fr_340px]">
 				{/* Header */}
 				<header className="col-span-full flex h-16 items-center justify-between border-b border-gray-200 bg-white/85 px-4 backdrop-blur-[14px] md:px-7" style={{ zIndex: 10 }}>
@@ -287,10 +263,6 @@ export default function ChatPage() {
 						<h1 className="m-0 whitespace-nowrap font-serif text-[18px] font-normal tracking-tight2 text-gray-950 sm:text-[22px]">
 							Financial <em className="italic text-gray-700">Advisor AI</em>
 						</h1>
-						<span className="hidden items-center gap-2 font-mono text-xs text-gray-400 sm:inline-flex">
-							<span className="inline-block h-1.5 w-1.5 rounded-full bg-[#16a34a] animate-[pulse_2s_cubic-bezier(0.2,0.7,0.2,1)_infinite]" />
-							Data per 17 Feb 2026
-						</span>
 					</div>
 					<div className="flex items-center gap-2">
 						<button
@@ -328,7 +300,7 @@ export default function ChatPage() {
 					<div className="flex-1 overflow-y-auto scroll-smooth px-4 py-8 md:px-8 max-[880px]:px-5">
 						<div className="mx-auto flex max-w-[760px] flex-col gap-6">
 							<AnimatePresence mode="wait">
-								{messages.length === 0 && !isTyping ? (
+								{showEmpty ? (
 									<motion.div
 										key="empty"
 										initial={{ opacity: 0 }}
@@ -357,7 +329,8 @@ export default function ChatPage() {
 													initial="hidden"
 													animate="show"
 													onClick={() => sendMessage(p.q)}
-													className="flex min-h-[90px] flex-col gap-1.5 border border-gray-200 bg-white p-[18px_20px] text-left transition-[background-color,border-color,transform] duration-200 ease-designhub hover:-translate-y-0.5 hover:border-gray-950 hover:bg-gray-50"
+													disabled={isStreaming}
+													className="flex min-h-[90px] flex-col gap-1.5 border border-gray-200 bg-white p-[18px_20px] text-left transition-[background-color,border-color,transform] duration-200 ease-designhub hover:-translate-y-0.5 hover:border-gray-950 hover:bg-gray-50 disabled:opacity-50"
 												>
 													<span className="font-mono text-[10px] font-medium uppercase tracking-labelWide text-gray-400">{p.label}</span>
 													<span className="text-sm font-medium leading-relaxed text-gray-950">{p.q}</span>
@@ -368,54 +341,45 @@ export default function ChatPage() {
 								) : (
 									<>
 										{messages.map((msg) => (
-											<motion.div
-												key={msg.id}
-												variants={msgVariants}
-												initial="hidden"
-												animate="show"
-												className={cn("flex flex-col", msg.role === "user" ? "items-end" : "items-start")}
-											>
-												<div
-													className={cn(
-														"max-w-[88%] break-words px-[18px] py-[14px] text-sm leading-relaxed",
-														msg.role === "user"
-															? "rounded-[14px_0_14px_14px] bg-gray-950 text-white [&_strong]:text-white"
-															: "ai-msg-content rounded-[0_14px_14px_14px] border border-gray-200 bg-white text-gray-900 [&_strong]:text-gray-950 [&_strong]:font-semibold",
-													)}
-													dangerouslySetInnerHTML={{ __html: msg.role === "ai" ? msg.content : msg.content.replace(/\n/g, "<br/>") }}
-												/>
-												<span className={cn("mt-1.5 font-mono text-[11px] text-gray-400", msg.role === "user" ? "mr-1" : "ml-1")}>
-													{msg.time}
-												</span>
-											</motion.div>
+											<MessageBubble key={msg.id} role={msg.role} content={msg.content} time={formatTime(msg.created_at)} sources={msg.sources ?? []} />
 										))}
-										<AnimatePresence>
-											{isTyping && (
-												<motion.div
-													key="typing"
-													variants={msgVariants}
-													initial="hidden"
-													animate="show"
-													exit="hidden"
-													className="flex flex-col items-start"
-												>
-													<div className="rounded-[0_14px_14px_14px] border border-gray-200 bg-white px-2 py-1">
-														<div className="inline-flex items-center gap-[5px] px-3 py-[14px]">
-															{[0, 1, 2].map((i) => (
-																<span
-																	key={i}
-																	className="h-[7px] w-[7px] rounded-full bg-gray-400"
-																	style={{
-																		animation: `chatBounce 1.2s infinite cubic-bezier(0.2,0.7,0.2,1)`,
-																		animationDelay: `${i * 0.18}s`,
-																	}}
-																/>
-															))}
+
+										{streaming && (
+											<>
+												<MessageBubble role="user" content={streaming.user} time="" />
+												{streaming.assistant.length === 0 && !streaming.error ? (
+													<motion.div
+														key="typing"
+														variants={msgVariants}
+														initial="hidden"
+														animate="show"
+														className="flex flex-col items-start"
+													>
+														<div className="rounded-[0_14px_14px_14px] border border-gray-200 bg-white px-2 py-1">
+															<div className="inline-flex items-center gap-[5px] px-3 py-[14px]">
+																{[0, 1, 2].map((i) => (
+																	<span
+																		key={i}
+																		className="h-[7px] w-[7px] rounded-full bg-gray-400"
+																		style={{
+																			animation: `chatBounce 1.2s infinite cubic-bezier(0.2,0.7,0.2,1)`,
+																			animationDelay: `${i * 0.18}s`,
+																		}}
+																	/>
+																))}
+															</div>
 														</div>
-													</div>
-												</motion.div>
-											)}
-										</AnimatePresence>
+													</motion.div>
+												) : (
+													<MessageBubble
+														role="assistant"
+														content={streaming.assistant + (streaming.error ? `\n\n_Error: ${streaming.error}_` : "")}
+														time=""
+														sources={streaming.sources}
+													/>
+												)}
+											</>
+										)}
 									</>
 								)}
 							</AnimatePresence>
@@ -438,13 +402,14 @@ export default function ChatPage() {
 								value={inputValue}
 								onChange={(e) => handleTextareaInput(e.target.value)}
 								onKeyDown={handleKeyDown}
+								disabled={isStreaming}
 								rows={1}
-								placeholder="Tanya apa saja..."
-								className="max-h-[160px] flex-1 resize-none border-none bg-transparent py-2 text-sm leading-normal text-gray-900 outline-none placeholder:text-gray-400"
+								placeholder={isStreaming ? "AI sedang merespons..." : "Tanya apa saja..."}
+								className="max-h-[160px] flex-1 resize-none border-none bg-transparent py-2 text-sm leading-normal text-gray-900 outline-none placeholder:text-gray-400 disabled:cursor-not-allowed"
 							/>
 							<button
 								type="button"
-								disabled={!inputValue.trim()}
+								disabled={!inputValue.trim() || isStreaming}
 								onClick={() => sendMessage(inputValue)}
 								className="grid h-9 w-9 shrink-0 place-items-center self-end bg-gray-950 text-white transition-[background-color,opacity] duration-200 hover:bg-black disabled:cursor-not-allowed disabled:opacity-30"
 								aria-label="Kirim"
@@ -463,90 +428,37 @@ export default function ChatPage() {
 
 				{/* Context panel */}
 				<aside className="hidden h-[calc(100vh-64px)] overflow-y-auto border-l border-gray-200 bg-gray-50 min-[1100px]:block">
-					{/* Active sources */}
 					<div className="border-b border-gray-200 px-5 py-[18px]">
 						<h3 className="mb-3 flex items-center justify-between text-[11px] font-medium uppercase tracking-labelWide text-gray-500">
-							Konteks Aktif
-							<span className="font-mono text-[10px] font-medium text-gray-400">{activeSources} sumber</span>
+							Sumber Data
 						</h3>
-						<div className="flex flex-col gap-1.5">
-							{dataSources.map((src) => (
-								<button
-									key={src.id}
-									type="button"
-									onClick={() => toggleSource(src.id)}
-									className={cn(
-										"flex w-full items-center gap-2.5 border bg-white px-3 py-2.5 text-left text-[12.5px] transition-[background-color,border-color,opacity] duration-200 hover:border-gray-700",
-										src.active ? "border-gray-200 text-gray-700" : "border-gray-200 opacity-50",
-									)}
-								>
-									<span className={cn("h-2 w-2 shrink-0 rounded-full", src.active ? "bg-gray-950" : "bg-gray-300")} />
-									<span className="flex min-w-0 flex-1 flex-col">
-										<span className={cn("truncate font-medium", src.active ? "text-gray-950" : "text-gray-500")}>{src.name}</span>
-										<span className="mt-0.5 block font-mono text-[10px] text-gray-400">{src.sub}</span>
-									</span>
-								</button>
-							))}
-							<button
-								type="button"
-								onClick={() => router.push("/import")}
-								className="mt-1 flex w-full items-center gap-2 border border-dashed border-gray-300 bg-transparent px-3 py-2 text-xs text-gray-500 transition-[border-color,color] duration-200 hover:border-gray-700 hover:text-gray-950"
-							>
-								<svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14" /><path d="M5 12h14" /></svg>
-								Tambah sumber data
-							</button>
-						</div>
+						<button
+							type="button"
+							onClick={() => router.push("/import")}
+							className="flex w-full items-center gap-2 border border-dashed border-gray-300 bg-transparent px-3 py-2 text-xs text-gray-500 transition-[border-color,color] duration-200 hover:border-gray-700 hover:text-gray-950"
+						>
+							<svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14" /><path d="M5 12h14" /></svg>
+							Tambah sumber data
+						</button>
 					</div>
 
-					{/* Quick stats */}
-					<div className="border-b border-gray-200 px-5 py-[18px]">
-						<h3 className="mb-3 text-[11px] font-medium uppercase tracking-labelWide text-gray-500">
-							Statistik Cepat
-						</h3>
-						<div className="grid grid-cols-2 border border-gray-200 bg-white">
-							<div className="border-b border-r border-gray-200 p-3.5">
-								<div className="text-[9.5px] font-medium uppercase tracking-label text-gray-400">Net Worth</div>
-								<div className="mt-1 font-serif text-[22px] leading-tight text-gray-950">247,5jt</div>
-								<div className="mt-0.5 font-mono text-[10px] text-gray-500">&uarr; +12,4%</div>
-							</div>
-							<div className="border-b border-gray-200 p-3.5">
-								<div className="text-[9.5px] font-medium uppercase tracking-label text-gray-400">Pengeluaran</div>
-								<div className="mt-1 font-mono text-sm font-medium leading-tight tracking-tight2 text-gray-950">Rp 3.640.000</div>
-								<div className="mt-0.5 font-mono text-[10px] text-gray-500">17 hari &middot; feb</div>
-							</div>
-							<div className="border-r border-gray-200 p-3.5">
-								<div className="text-[9.5px] font-medium uppercase tracking-label text-gray-400">Saving Rate</div>
-								<div className="mt-1 font-mono text-sm font-medium leading-tight tracking-tight2 text-gray-950">29%</div>
-								<div className="mt-0.5 font-mono text-[10px] text-gray-500">target 25%</div>
-							</div>
-							<div className="p-3.5">
-								<div className="text-[9.5px] font-medium uppercase tracking-label text-gray-400">Transaksi</div>
-								<div className="mt-1 font-mono text-sm font-medium leading-tight tracking-tight2 text-gray-950">127</div>
-								<div className="mt-0.5 font-mono text-[10px] text-gray-500">bulan ini</div>
-							</div>
-						</div>
-					</div>
-
-					{/* Chat history */}
 					<div className="px-5 py-[18px]">
 						<h3 className="mb-3 text-[11px] font-medium uppercase tracking-labelWide text-gray-500">
 							Riwayat Chat
 						</h3>
-						{HISTORY.map((h) => (
-							<button
-								key={h.title}
-								type="button"
-								className="flex w-full items-start gap-2.5 border-b border-gray-200 px-0 py-2.5 text-left text-[12.5px] text-gray-700 last:border-b-0 hover:[&_.hist-name]:text-gray-950"
-							>
-								<span className="mt-0.5 shrink-0 text-gray-400">
-									<svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.5 8.5 0 1 1-3.4-6.8L21 4l-1 3.5A8.5 8.5 0 0 1 21 11.5z" /></svg>
-								</span>
-								<span className="min-w-0 flex-1">
-									<span className="hist-name block truncate font-medium text-gray-800 transition-colors duration-200">{h.title}</span>
-									<span className="mt-0.5 block font-mono text-[10.5px] text-gray-400">{h.when}</span>
-								</span>
-							</button>
-						))}
+						{sessionList.length === 0 ? (
+							<div className="text-[12.5px] text-gray-500">Belum ada chat. Klik &quot;Chat Baru&quot; untuk memulai.</div>
+						) : (
+							sessionList.map((s) => (
+								<SessionItem
+									key={s.id}
+									session={s}
+									active={s.id === activeSessionId}
+									onSelect={() => setActiveSessionId(s.id)}
+									onDelete={() => handleDeleteSession(s.id)}
+								/>
+							))
+						)}
 					</div>
 				</aside>
 			</div>
@@ -583,27 +495,44 @@ export default function ChatPage() {
 								</button>
 							</div>
 							<div className="flex-1 overflow-y-auto px-5 py-4">
-								{HISTORY.map((h) => (
-									<button
-										key={h.title}
-										type="button"
-										onClick={() => setShowMobileHistory(false)}
-										className="flex w-full items-start gap-2.5 border-b border-gray-200 px-0 py-3 text-left text-[12.5px] text-gray-700 last:border-b-0"
-									>
-										<span className="mt-0.5 shrink-0 text-gray-400">
-											<svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.5 8.5 0 1 1-3.4-6.8L21 4l-1 3.5A8.5 8.5 0 0 1 21 11.5z" /></svg>
-										</span>
-										<span className="min-w-0 flex-1">
-											<span className="block truncate font-medium text-gray-800">{h.title}</span>
-											<span className="mt-0.5 block font-mono text-[10.5px] text-gray-400">{h.when}</span>
-										</span>
-									</button>
-								))}
+								{sessionList.length === 0 ? (
+									<div className="text-[12.5px] text-gray-500">Belum ada chat.</div>
+								) : (
+									sessionList.map((s) => (
+										<SessionItem
+											key={s.id}
+											session={s}
+											active={s.id === activeSessionId}
+											onSelect={() => { setActiveSessionId(s.id); setShowMobileHistory(false); }}
+											onDelete={() => handleDeleteSession(s.id)}
+										/>
+									))
+								)}
 							</div>
 						</motion.div>
 					</>
 				)}
 			</AnimatePresence>
+
+			<ConfirmDialog
+				open={pendingDeleteId !== null}
+				title="Hapus percakapan?"
+				description={
+					pendingDeleteSession
+						? `"${pendingDeleteSession.title}" beserta seluruh pesannya akan dihapus permanen.`
+						: undefined
+				}
+				confirmLabel="Hapus"
+				cancelLabel="Batal"
+				tone="danger"
+				loading={deleteSessionMutation.isPending}
+				onConfirm={() => {
+					if (pendingDeleteId) deleteSessionMutation.mutate(pendingDeleteId);
+				}}
+				onClose={() => {
+					if (!deleteSessionMutation.isPending) setPendingDeleteId(null);
+				}}
+			/>
 
 			{/* Toast */}
 			<AnimatePresence>
@@ -627,5 +556,187 @@ export default function ChatPage() {
 				}
 			`}</style>
 		</>
+	);
+}
+
+function MessageBubble({
+	role,
+	content,
+	time,
+	sources = [],
+}: {
+	role: "user" | "assistant" | "system";
+	content: string;
+	time: string;
+	sources?: string[];
+}) {
+	const isUser = role === "user";
+	return (
+		<motion.div
+			variants={msgVariants}
+			initial="hidden"
+			animate="show"
+			className={cn("flex flex-col", isUser ? "items-end" : "items-start")}
+		>
+			<div
+				className={cn(
+					"max-w-[88%] whitespace-pre-wrap break-words px-[18px] py-[14px] text-sm leading-relaxed",
+					isUser
+						? "rounded-[14px_0_14px_14px] bg-gray-950 text-white"
+						: "rounded-[0_14px_14px_14px] border border-gray-200 bg-white text-gray-900",
+				)}
+			>
+				{content}
+			</div>
+			{!isUser && sources.length > 0 && (
+				<div className="mt-2 flex flex-wrap gap-1.5">
+					{sources.map((id) => (
+						<SourcePill key={id} txId={id} />
+					))}
+				</div>
+			)}
+			{time && (
+				<span className={cn("mt-1.5 font-mono text-[11px] text-gray-400", isUser ? "mr-1" : "ml-1")}>
+					{time}
+				</span>
+			)}
+		</motion.div>
+	);
+}
+
+// Source pill — fetches transaction detail on mount, shows preview on hover/tap.
+// Tab di mobile (no hover) = toggle. TanStack Query cache by tx id, jadi pill
+// dengan id sama (lintas pesan) cuma fetch sekali.
+function SourcePill({ txId }: { txId: string }) {
+	const [open, setOpen] = useState(false);
+	const wrapRef = useRef<HTMLSpanElement>(null);
+
+	const { data: tx } = useQuery({
+		queryKey: ["transaction", txId],
+		queryFn: () => getTransaction(txId),
+		staleTime: 5 * 60_000,
+	});
+
+	useEffect(() => {
+		if (!open) return;
+		const handler = (e: MouseEvent) => {
+			if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+				setOpen(false);
+			}
+		};
+		document.addEventListener("mousedown", handler);
+		return () => document.removeEventListener("mousedown", handler);
+	}, [open]);
+
+	const label = tx?.merchant_name || `${txId.slice(0, 8)}…`;
+	const amount = tx ? parseFloat(tx.amount) : 0;
+	const isIncome = amount > 0;
+
+	return (
+		<span
+			ref={wrapRef}
+			className="relative inline-flex"
+			onMouseEnter={() => setOpen(true)}
+			onMouseLeave={() => setOpen(false)}
+		>
+			<button
+				type="button"
+				onClick={() => setOpen((v) => !v)}
+				className="inline-flex max-w-[160px] items-center gap-1 truncate rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10.5px] text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-950"
+			>
+				<span className="truncate">{label}</span>
+			</button>
+			<AnimatePresence>
+				{open && tx && (
+					<motion.span
+						initial={{ opacity: 0, y: 4 }}
+						animate={{ opacity: 1, y: 0 }}
+						exit={{ opacity: 0, y: 4 }}
+						transition={{ duration: 0.15 }}
+						className="absolute bottom-full left-0 z-20 mb-1.5 w-[240px] rounded-lg border border-gray-200 bg-white p-3 shadow-[0_10px_30px_-8px_rgba(0,0,0,0.18)]"
+					>
+						<span className="block truncate text-[13px] font-medium text-gray-950">
+							{tx.merchant_name || "(tanpa merchant)"}
+						</span>
+						{tx.description && (
+							<span className="mt-0.5 block truncate text-[11.5px] text-gray-500">
+								{tx.description}
+							</span>
+						)}
+						<span
+							className={cn(
+								"mt-2 block font-mono text-[13px] font-medium tabular-nums",
+								isIncome ? "text-gray-950" : "text-gray-950",
+							)}
+						>
+							{isIncome ? "+" : "−"} {formatRupiah(Math.abs(amount))}
+						</span>
+						<span className="mt-1 flex items-center justify-between font-mono text-[10.5px] text-gray-400">
+							<span>{tx.transaction_date}</span>
+							{tx.category && (
+								<span className="rounded-full bg-gray-100 px-2 py-0.5 text-gray-600">
+									{tx.category}
+								</span>
+							)}
+						</span>
+					</motion.span>
+				)}
+			</AnimatePresence>
+		</span>
+	);
+}
+
+function SessionItem({
+	session,
+	active,
+	onSelect,
+	onDelete,
+}: {
+	session: ChatSessionResponse;
+	active: boolean;
+	onSelect: () => void;
+	onDelete: () => void;
+}) {
+	const handleDeleteClick = (e: React.MouseEvent) => {
+		e.stopPropagation();
+		onDelete();
+	};
+
+	return (
+		<div
+			className={cn(
+				"group relative flex items-start gap-2.5 border-b border-gray-200 py-2.5 text-[12.5px] last:border-b-0 transition-colors",
+				active ? "text-gray-950" : "text-gray-700",
+			)}
+		>
+			<button
+				type="button"
+				onClick={onSelect}
+				className="flex flex-1 items-start gap-2.5 text-left"
+			>
+				<span className="mt-0.5 shrink-0 text-gray-400">
+					<svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.5 8.5 0 1 1-3.4-6.8L21 4l-1 3.5A8.5 8.5 0 0 1 21 11.5z" /></svg>
+				</span>
+				<span className="min-w-0 flex-1 pr-6">
+					<span className={cn(
+						"block truncate font-medium transition-colors duration-200",
+						active ? "text-gray-950" : "text-gray-800 group-hover:text-gray-950",
+					)}>{session.title}</span>
+					<span className="mt-0.5 block font-mono text-[10.5px] text-gray-400">{formatRelative(session.last_message_at)}</span>
+				</span>
+			</button>
+			<button
+				type="button"
+				onClick={handleDeleteClick}
+				aria-label="Hapus percakapan"
+				className="absolute right-0 top-2.5 grid h-6 w-6 place-items-center rounded text-gray-400 opacity-0 transition-opacity hover:bg-gray-100 hover:text-gray-950 group-hover:opacity-100"
+			>
+				<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+					<polyline points="3 6 5 6 21 6" />
+					<path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+					<path d="M10 11v6M14 11v6" />
+				</svg>
+			</button>
+		</div>
 	);
 }
